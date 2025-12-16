@@ -1,0 +1,14 @@
+[Unit]
+Description=stencil2
+
+[Service]
+User=root
+WorkingDirectory=/www/stencil2
+ExecStart=/www/stencil2/stencil2 -p serve
+Restart=always
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target
+
