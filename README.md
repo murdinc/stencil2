@@ -5,13 +5,15 @@ A high-performance, multi-site template engine and content management platform w
 ## Features
 
 - **Multi-Site Hosting**: Host multiple independent websites with separate configurations, templates, and databases
+- **Built-in Admin CMS**: Web-based admin interface for managing websites, articles, and products
+- **E-commerce Ready**: Built-in e-commerce tables and REST APIs for products, collections, cart, and checkout
 - **Powerful Template Engine**: Go templates with custom functions and Sprig library integration
 - **Asset Pipeline**: Automatic CSS/JS minification and combination with cache busting
 - **REST API**: JSON API (v1) for programmatic content access
 - **Dynamic Routing**: Template-based route generation with pagination support
 - **Media Proxy**: On-the-fly image resizing with WebP support
 - **Sitemap Generation**: Automatic XML sitemap generation from database content
-- **Development Tools**: File watcher for hot-reload, in-memory database, and error debugging
+- **Development Tools**: File watcher for hot-reload and error debugging
 - **Production Ready**: Includes systemd service and Nginx configuration examples
 
 ## Table of Contents
@@ -35,7 +37,7 @@ A high-performance, multi-site template engine and content management platform w
 ### Prerequisites
 
 - Go 1.20 or higher
-- MySQL 5.5+ or MariaDB 10.1+ (or use the built-in local database for development)
+- MySQL 5.5+ or MariaDB 10.1+
 
 ### Build from Source
 
@@ -140,15 +142,14 @@ Create a template file (`templates/homepage/homepage.tpl`):
 ### 3. Start the Server
 
 ```bash
-# Development mode with local database
-./stencil2 localdb
-
-# In another terminal, start the web server
+# Development mode
 ./stencil2 serve
 
 # Or in production mode
 ./stencil2 --prod-mode serve
 ```
+
+**Note**: On first startup, Stencil2 automatically creates all necessary database tables (article tables and e-commerce tables) if they don't exist. No manual SQL imports required!
 
 ### 4. Access Your Site
 
@@ -158,6 +159,187 @@ Add to `/etc/hosts`:
 ```
 
 Visit `http://example.com:8080`
+
+## Admin Backend (CMS)
+
+Stencil2 includes a built-in web-based admin interface for managing websites, articles, and products.
+
+### Enabling the Admin
+
+The admin backend is configured in `websites/env-dev.json`:
+
+```json
+{
+  "admin": {
+    "enabled": true,
+    "port": "8081",
+    "password": "your-secure-password",
+    "database": {
+      "name": "stencil_admin"
+    }
+  }
+}
+```
+
+**Configuration options**:
+- `enabled`: Set to `true` to start the admin server
+- `port`: Port for admin interface (default: 8081)
+- `password`: Admin login password (change this!)
+- `database.name`: Database name for admin data (default: stencil_admin)
+
+### Accessing the Admin
+
+1. Start the server: `./stencil2 serve`
+2. Visit: `http://localhost:8081/login`
+3. Enter your password
+4. You'll see the dashboard with all your websites
+
+### Admin Features
+
+**Website Management**:
+- Create new websites (automatically creates folder structure and config files)
+- Edit website settings
+- Delete websites
+- Each website gets its own database automatically created
+
+**Article/Content Management**:
+- Create, edit, and delete articles
+- Set article type (article, page, gallery)
+- Set status (draft, published, archived)
+- Manage article content, excerpts, and metadata
+
+**Product Management**:
+- Create, edit, and delete products
+- Set pricing and compare-at pricing
+- Manage inventory and SKUs
+- Set product status and featured flag
+- Configure inventory policies
+
+**Category & Collection Management**:
+- Create and delete article categories
+- Create and delete product collections
+- Automatically generates slugs
+
+**Image Management**:
+- Upload and manage images
+- Track image URLs and metadata
+- Use images in articles and products
+
+### Admin Database
+
+The admin uses its own database (`stencil_admin` by default) which stores:
+- `admin_websites` - Registry of all websites
+- `admin_activity_log` - Audit log of all admin actions
+
+Each website's content (articles, products) is stored in that website's own database, keeping data isolated.
+
+### Security Notes
+
+- **Change the default password** in `env-dev.json`
+- Admin uses session-based authentication (24-hour sessions)
+- Sessions are stored in memory (will be lost on server restart)
+- For production, use HTTPS and a strong password
+- Consider adding IP restrictions via firewall
+
+## Site Types
+
+Stencil2 supports two types of websites, and **a single site can be both**:
+
+### Article/Content Sites
+
+For blogs, news sites, magazines, and content-driven websites.
+
+**Auto-created tables**:
+- `articles_unified` - Articles, blog posts, pages, galleries
+- `categories_unified` - Article categories
+- `authors_unified` - Author profiles
+- `tags_unified` - Article tags
+- `images_unified` - Image library
+- `article_information` - Denormalized JSON data for fast queries
+- Relationship tables: `article_authors`, `article_categories`, `article_tags`
+- Gallery support: `article_slides`
+- Preview mode: `preview_article_information`, `preview_article_slides`
+
+**API Endpoints** (see [API Endpoints](#api-endpoints) for full list):
+- `GET /api/v1/posts` - List articles
+- `GET /api/v1/post/{slug}` - Single article
+- `GET /api/v1/category/{slug}/posts` - Articles by category
+- `GET /api/v1/author/{slug}/posts` - Articles by author
+- `GET /api/v1/tag/{slug}/posts` - Articles by tag
+
+**Example template config**:
+```json
+{
+  "name": "homepage",
+  "path": "/",
+  "apiEndpoint": "/api/v1/posts",
+  "apiCount": 10,
+  "cacheTime": 300
+}
+```
+
+### E-commerce Sites
+
+For online stores, product catalogs, and shopping experiences.
+
+**Auto-created tables**:
+- `products_unified` - Product catalog with pricing, inventory, SKUs
+- `collections_unified` - Product collections (like categories)
+- `product_variants` - Size, color, and other variations
+- `product_images` - Product image galleries
+- `carts` - Shopping cart sessions (7-day expiry)
+- `cart_items` - Items in shopping carts
+- `orders` - Customer orders with shipping/billing
+- `order_items` - Order line items
+
+**API Endpoints** (see [ECOMMERCE.md](ECOMMERCE.md) for full documentation):
+- `GET /api/v1/products` - List products
+- `GET /api/v1/product/{slug}` - Single product
+- `GET /api/v1/collections` - List collections
+- `GET /api/v1/collection/{slug}/products` - Products in collection
+- `POST /api/v1/cart/add` - Add to cart
+- `POST /api/v1/checkout` - Process checkout
+- `GET /api/v1/order/{orderNumber}` - View order
+
+**Example template config**:
+```json
+{
+  "name": "store",
+  "path": "/store",
+  "apiEndpoint": "/api/v1/products",
+  "apiCount": 12,
+  "cacheTime": 300
+}
+```
+
+### Hybrid Sites (Both Article + E-commerce)
+
+A single website can use both article and e-commerce features simultaneously. For example:
+- A blog with a merch store
+- A news site with subscription products
+- A magazine with an e-commerce section
+
+Simply use both types of API endpoints in different templates:
+
+```json
+// Homepage with latest articles
+{
+  "name": "homepage",
+  "path": "/",
+  "apiEndpoint": "/api/v1/posts"
+}
+```
+
+```json
+// Store page with products
+{
+  "name": "store",
+  "path": "/store",
+  "apiEndpoint": "/api/v1/products"
+}
+```
+
+**All tables are created automatically** when the server starts, so you can use whichever features you need without any manual database setup.
 
 ## Configuration
 
@@ -233,19 +415,6 @@ Start the HTTP server to serve all configured websites.
 ./stencil2 serve --hide-errors      # Hide friendly error pages (dev only)
 ```
 
-### localdb
-
-Start an in-memory MySQL database for local development.
-
-```bash
-./stencil2 localdb
-```
-
-The local database will:
-- Create an in-memory MySQL engine
-- Load all `.sql` files from `websites/{site}/data/` directories
-- Stay running until stopped (Ctrl+C)
-
 ### sitemaps
 
 Generate XML sitemaps for all configured websites.
@@ -269,16 +438,14 @@ stencil2/
 ├── cmd/                          # CLI commands
 │   ├── root.go                   # Root command with flags
 │   ├── serve.go                  # Web server command
-│   ├── localdb.go                # Local database command
 │   └── sitemaps.go               # Sitemap generation command
 ├── configs/                      # Configuration loaders
 │   ├── env.go                    # Environment config loader
 │   ├── website.go                # Website config loader
 │   └── template.go               # Template config loader
 ├── database/                     # Database layer
-│   ├── connection.go             # Connection management
-│   ├── queries.go                # Query methods
-│   └── localdb.go                # In-memory database setup
+│   ├── client.go                 # Connection management
+│   └── queries.go                # Query methods
 ├── frontend/                     # Website rendering
 │   ├── router.go                 # Route registration
 │   ├── websites.go               # Website instance management
@@ -310,8 +477,7 @@ stencil2/
 │       │       ├── *.css                 # CSS files
 │       │       └── *.js                  # JavaScript files
 │       ├── public/               # Static assets (served at /public/)
-│       ├── sitemaps/             # Generated sitemaps (served at /sitemaps/)
-│       └── data/                 # SQL dump files for localdb
+│       └── sitemaps/             # Generated sitemaps (served at /sitemaps/)
 ├── main.go                       # Application entry point
 ├── go.mod                        # Go module definition
 ├── go.sum                        # Go module checksums
@@ -357,6 +523,71 @@ Templates can require other templates using the `requires` field:
 ```
 
 All `.tpl` files from required template directories will be available for use with `{{ template "name" . }}`.
+
+**Common Pattern - Shared Components**:
+
+A typical pattern is to create a `common` template that defines reusable components like headers, footers, and base styles:
+
+```html
+<!-- templates/common/common.tpl -->
+{{define "header"}}
+<header>
+    <nav>
+        <a href="/">Home</a>
+        <a href="/shop">Shop</a>
+    </nav>
+</header>
+{{end}}
+
+{{define "footer"}}
+<footer>
+    <p>&copy; 2025 My Site</p>
+</footer>
+{{end}}
+
+{{define "styles"}}
+<style>
+    body { font-family: sans-serif; }
+    header { background: #333; color: white; }
+</style>
+{{end}}
+```
+
+Then other templates can require and use these components:
+
+```html
+<!-- templates/homepage/homepage.tpl -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ sitename }}</title>
+    {{template "styles" .}}
+    <style>
+        /* Page-specific styles */
+    </style>
+</head>
+<body>
+    {{template "header" .}}
+
+    <main>
+        <!-- Page content -->
+    </main>
+
+    {{template "footer" .}}
+</body>
+</html>
+```
+
+```json
+// templates/homepage/homepage.json
+{
+  "name": "homepage",
+  "path": "/",
+  "requires": ["common"]
+}
+```
+
+This eliminates code duplication and makes it easy to maintain consistent branding across all pages.
 
 ### Example Templates
 
@@ -584,8 +815,6 @@ CREATE TABLE article_sitemaps (
 );
 ```
 
-For a complete schema, place `.sql` dump files in `websites/{site}/data/` for use with `localdb`.
-
 ## Deployment
 
 ### Production Build
@@ -655,21 +884,6 @@ In development mode, Stencil2 automatically watches for changes:
 
 No server restart required!
 
-### Local Database
-
-Use the in-memory database for development:
-
-```bash
-# Terminal 1: Start local database
-./stencil2 localdb
-
-# Terminal 2: Start server
-./stencil2 serve
-
-# Terminal 3: Load sample data
-mysql -h 127.0.0.1 -P 3306 -u root your_database < sample_data.sql
-```
-
 ### Error Debugging
 
 Development mode shows detailed error pages by default:
@@ -699,6 +913,30 @@ The `{{ hash }}` function generates an MD5 hash of your `/public/` directory:
 ```
 
 When files change, the hash updates automatically, busting browser caches.
+
+## Recent Updates & Bug Fixes
+
+### Admin CMS Improvements (December 2024)
+
+#### Product Date Field Persistence
+Fixed an issue where the `released_date` field on products was not being saved or loaded correctly:
+- Added `released_date` column to SELECT, INSERT, and UPDATE queries (`admin/queries.go`)
+- Implemented proper NULL handling using `sql.NullTime` for nullable datetime fields
+- Products can now have optional release dates that persist correctly
+
+#### Article Date Field Persistence
+Fixed an issue where the `published_date` field was not being parsed from the admin form:
+- Added form parsing for `published_date` in both create and update handlers (`admin/handlers.go`)
+- Form field uses `datetime-local` input type with format `2006-01-02T15:04`
+- Published dates now persist correctly when manually set in the admin
+
+#### Product Collections Association
+Fixed checkbox logic in the product form that prevented collections from being properly displayed:
+- Corrected template comparison logic in `admin/templates/product_form_content.html`
+- Changed from incorrect `{{if eq .ID $.ID}}` to correct `{{if eq .ID $collection.ID}}`
+- Collections now correctly show as checked when editing products
+
+These fixes ensure that all metadata fields in the admin CMS persist correctly across saves and page reloads.
 
 ## Contributing
 

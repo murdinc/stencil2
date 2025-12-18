@@ -3,10 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"os"
-	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -74,84 +71,3 @@ func (dbConn *DBConnection) QueryRows(query string, args ...interface{}) (*sql.R
 	return rows, nil
 }
 
-// ExecuteSQLFile executes the SQL statements from a .sql file
-func (dbConn *DBConnection) ExecuteSQLFile(filename string) error {
-	data, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return err
-	}
-
-	// Split the contents of the file into individual SQL statements
-	sqlStatements := strings.Split(string(data), ";\n")
-
-	tx, err := dbConn.Database.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		}
-	}()
-
-	for _, stmt := range sqlStatements {
-		stmt = strings.TrimSpace(stmt)
-		if stmt == "" {
-			continue
-		}
-
-		_, err := tx.Exec(stmt)
-		if err != nil {
-			return err
-		}
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// Load a mysqldump file into a database
-func (dbConn *DBConnection) LoadDB(dbName string, directory string) {
-
-	sqlFile := fmt.Sprintf("%s/data/%s.sql", directory, dbName)
-
-	// create the db
-	log.Printf("Creating new DB [%s]...\n", dbName)
-	createQuery := fmt.Sprintf("CREATE DATABASE %s", dbName)
-	_, err := dbConn.ExecuteQuery(createQuery)
-	if err != nil {
-		log.Fatalf("Failed to create DB: %v", err)
-	}
-
-	// bail if there is no file to import
-	if !fileExists(sqlFile) {
-		return
-	}
-
-	useQuery := fmt.Sprintf("USE %s", dbName)
-	_, err = dbConn.ExecuteQuery(useQuery)
-	if err != nil {
-		log.Fatalf("Failed to switch DB: %v", err)
-	}
-
-	// load the data
-	log.Printf("Loading SQL file for %s...\n", dbName)
-	err = dbConn.ExecuteSQLFile(sqlFile)
-	if err != nil {
-		log.Fatalf("Failed to load SQL file: %v", err)
-	}
-
-	log.Printf("SQL file for %s loaded successfully!\n", dbName)
-}
-
-func fileExists(filename string) bool {
-	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return !info.IsDir()
-}

@@ -1,0 +1,37 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>Welcome to stencil</h2>
+    <p>Select a website from the dropdown above to manage its content</p>
+</div>
+
+<div class="card">
+    <h3>Quick Actions</h3>
+    <a href="/websites/new" class="btn btn-success">Create New Website</a>
+</div>
+
+{{if .AllSites}}
+<div class="card">
+    <h3>Your Websites</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Site Name</th>
+                <th>Database</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .AllSites}}
+            <tr>
+                <td><strong>{{.SiteName}}</strong></td>
+                <td><code>{{.DatabaseName}}</code></td>
+                <td>
+                    <a href="/site/{{.ID}}" class="btn btn-sm">Open</a>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}
+{{end}}

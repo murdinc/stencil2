@@ -143,6 +143,63 @@ func (website *Website) GetRoute(name string) func(w http.ResponseWriter, r *htt
 					pageData.StatusCode = 404
 				}
 				pageData.Categories = categories
+
+			case "product":
+				product, err := website.DBConn.GetProduct(vars["slug"])
+				if err != nil {
+					pageData.ErrorDescription = err.Error()
+					pageData.StatusCode = 500
+				}
+				if product.Slug == "" {
+					pageData.ErrorString = "Product not found!"
+					pageData.StatusCode = 404
+				}
+				pageData.Product = product
+
+			case "products":
+				products, err := website.DBConn.GetProducts(vars, URLParams)
+				if err != nil {
+					pageData.ErrorDescription = err.Error()
+					pageData.StatusCode = 500
+				}
+				if len(products) == 0 {
+					pageData.ErrorString = "No products available!"
+					pageData.StatusCode = 404
+				}
+				pageData.Products = products
+
+			case "collection":
+				collection, err := website.DBConn.GetCollection(vars["slug"])
+				if err != nil {
+					pageData.ErrorDescription = err.Error()
+					pageData.StatusCode = 500
+				}
+				if collection.Slug == "" {
+					pageData.ErrorString = "Collection not found!"
+					pageData.StatusCode = 404
+				}
+				pageData.Collection = collection
+
+				// Also get products in this collection
+				products, err := website.DBConn.GetCollectionProducts(vars["slug"], vars, URLParams)
+				if err != nil {
+					pageData.ErrorDescription = err.Error()
+					pageData.StatusCode = 500
+				}
+				pageData.Products = products
+
+			case "collections":
+				collections, err := website.DBConn.GetCollections()
+				if err != nil {
+					pageData.ErrorDescription = err.Error()
+					pageData.StatusCode = 500
+				}
+				if len(collections) == 0 {
+					pageData.ErrorString = "No collections available!"
+					pageData.StatusCode = 404
+				}
+				pageData.Collections = collections
+
 			default:
 				//
 			}

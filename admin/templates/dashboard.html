@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stencil2 Admin - Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
+        .header { background: #333; color: white; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { margin: 0; font-size: 24px; }
+        .header a { color: white; text-decoration: none; }
+        .container { max-width: 1200px; margin: 30px auto; padding: 0 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .btn { display: inline-block; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; margin-right: 10px; }
+        .btn:hover { background: #0056b3; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background: #f8f9fa; font-weight: bold; }
+        .actions a { margin-right: 10px; color: #007bff; text-decoration: none; }
+        .actions a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Stencil2 Admin</h1>
+        <a href="/logout">Logout</a>
+    </div>
+    <div class="container">
+        <div class="card">
+            <h2>Websites</h2>
+            <a href="/websites/new" class="btn">Create New Website</a>
+
+            {{if .Websites}}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Site Name</th>
+                        <th>Directory</th>
+                        <th>Database</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Websites}}
+                    <tr>
+                        <td>{{.SiteName}}</td>
+                        <td>{{.Directory}}</td>
+                        <td>{{.DatabaseName}}</td>
+                        <td class="actions">
+                            <a href="/websites/{{.ID}}/articles">Articles</a>
+                            <a href="/websites/{{.ID}}/products">Products</a>
+                            <a href="/websites/{{.ID}}/categories">Categories</a>
+                            <a href="/websites/{{.ID}}/collections">Collections</a>
+                            <a href="/websites/{{.ID}}/images">Images</a>
+                            <a href="/websites/{{.ID}}/edit">Edit</a>
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+            {{else}}
+            <p>No websites yet. <a href="/websites/new">Create one</a>.</p>
+            {{end}}
+        </div>
+    </div>
+</body>
+</html>

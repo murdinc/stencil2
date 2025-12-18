@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{.Title}} - Stencil2 Admin</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
+        .header { background: #333; color: white; padding: 15px 30px; }
+        .header h1 { margin: 0; font-size: 24px; }
+        .container { max-width: 1000px; margin: 30px auto; padding: 0 20px; }
+        .card { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], input[type="number"], textarea, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-family: Arial, sans-serif; }
+        textarea { min-height: 150px; }
+        button { padding: 12px 30px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .back-link { display: inline-block; margin-bottom: 20px; color: #007bff; text-decoration: none; }
+        .back-link:hover { text-decoration: underline; }
+        input[type="checkbox"] { width: auto; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Stencil2 Admin - {{.Website.SiteName}}</h1>
+    </div>
+    <div class="container">
+        <a href="/websites/{{.Website.ID}}/products" class="back-link">← Back to Products</a>
+        <div class="card">
+            <h2>{{.Title}}</h2>
+            <form method="POST" action="{{.Action}}">
+                <div class="form-group">
+                    <label>Name:</label>
+                    <input type="text" name="name" value="{{if .Product}}{{.Product.Name}}{{end}}" required>
+                </div>
+                <div class="form-group">
+                    <label>Slug:</label>
+                    <input type="text" name="slug" value="{{if .Product}}{{.Product.Slug}}{{end}}" required>
+                </div>
+                <div class="form-group">
+                    <label>Description:</label>
+                    <textarea name="description">{{if .Product}}{{.Product.Description}}{{end}}</textarea>
+                </div>
+                <div class="form-group">
+                    <label>Price:</label>
+                    <input type="number" name="price" step="0.01" value="{{if .Product}}{{.Product.Price}}{{end}}" required>
+                </div>
+                <div class="form-group">
+                    <label>Compare At Price:</label>
+                    <input type="number" name="compareAtPrice" step="0.01" value="{{if .Product}}{{.Product.CompareAtPrice}}{{end}}">
+                </div>
+                <div class="form-group">
+                    <label>SKU:</label>
+                    <input type="text" name="sku" value="{{if .Product}}{{.Product.SKU}}{{end}}">
+                </div>
+                <div class="form-group">
+                    <label>Inventory Quantity:</label>
+                    <input type="number" name="inventoryQuantity" value="{{if .Product}}{{.Product.InventoryQuantity}}{{end}}">
+                </div>
+                <div class="form-group">
+                    <label>Inventory Policy:</label>
+                    <select name="inventoryPolicy">
+                        <option value="deny" {{if .Product}}{{if eq .Product.InventoryPolicy "deny"}}selected{{end}}{{end}}>Deny</option>
+                        <option value="continue" {{if .Product}}{{if eq .Product.InventoryPolicy "continue"}}selected{{end}}{{end}}>Continue</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Status:</label>
+                    <select name="status">
+                        <option value="draft" {{if .Product}}{{if eq .Product.Status "draft"}}selected{{end}}{{end}}>Draft</option>
+                        <option value="published" {{if .Product}}{{if eq .Product.Status "published"}}selected{{end}}{{end}}>Published</option>
+                        <option value="archived" {{if .Product}}{{if eq .Product.Status "archived"}}selected{{end}}{{end}}>Archived</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="featured" {{if .Product}}{{if .Product.Featured}}checked{{end}}{{end}}>
+                        Featured
+                    </label>
+                </div>
+                <button type="submit">Save</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

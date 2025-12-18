@@ -1,0 +1,78 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>{{.FormTitle}}</h2>
+    <p>{{if .Product}}Edit product{{else}}Create a new product{{end}} for {{.Website.SiteName}}</p>
+</div>
+
+<div class="card">
+    <form method="POST" action="{{.Action}}">
+        <div class="form-group">
+            <label>Name:</label>
+            <input type="text" name="name" value="{{if .Product}}{{.Product.Name}}{{end}}" required>
+        </div>
+        <div class="form-group">
+            <label>Slug:</label>
+            <input type="text" name="slug" value="{{if .Product}}{{.Product.Slug}}{{end}}" required>
+        </div>
+        <div class="form-group">
+            <label>Description:</label>
+            <textarea name="description">{{if .Product}}{{.Product.Description}}{{end}}</textarea>
+        </div>
+        <div class="form-group">
+            <label>Price:</label>
+            <input type="number" name="price" step="0.01" value="{{if .Product}}{{.Product.Price}}{{end}}" required>
+        </div>
+        <div class="form-group">
+            <label>Compare At Price:</label>
+            <input type="number" name="compareAtPrice" step="0.01" value="{{if .Product}}{{.Product.CompareAtPrice}}{{end}}">
+        </div>
+        <div class="form-group">
+            <label>SKU:</label>
+            <input type="text" name="sku" value="{{if .Product}}{{.Product.SKU}}{{end}}">
+        </div>
+        <div class="form-group">
+            <label>Inventory Quantity:</label>
+            <input type="number" name="inventoryQuantity" value="{{if .Product}}{{.Product.InventoryQuantity}}{{end}}">
+        </div>
+        <div class="form-group">
+            <label>Inventory Policy:</label>
+            <select name="inventoryPolicy">
+                <option value="deny" {{if .Product}}{{if eq .Product.InventoryPolicy "deny"}}selected{{end}}{{end}}>Deny</option>
+                <option value="continue" {{if .Product}}{{if eq .Product.InventoryPolicy "continue"}}selected{{end}}{{end}}>Continue</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Status:</label>
+            <select name="status">
+                <option value="draft" {{if .Product}}{{if eq .Product.Status "draft"}}selected{{end}}{{end}}>Draft</option>
+                <option value="published" {{if .Product}}{{if eq .Product.Status "published"}}selected{{end}}{{end}}>Published</option>
+                <option value="archived" {{if .Product}}{{if eq .Product.Status "archived"}}selected{{end}}{{end}}>Archived</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="featured" {{if .Product}}{{if .Product.Featured}}checked{{end}}{{end}}>
+                Featured
+            </label>
+        </div>
+        <div class="form-group">
+            <label>Collections:</label>
+            <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px;">
+                {{if .Collections}}
+                    {{range $collection := .Collections}}
+                    <label style="display: block; margin-bottom: 8px;">
+                        <input type="checkbox" name="collections[]" value="{{$collection.ID}}"
+                            {{if $.Product}}{{range $.ProductCollections}}{{if eq .ID $collection.ID}}checked{{end}}{{end}}{{end}}>
+                        {{$collection.Name}}
+                    </label>
+                    {{end}}
+                {{else}}
+                    <p style="color: #7f8c8d; margin: 0;">No collections available. <a href="/site/{{.Website.ID}}/collections">Create one</a>.</p>
+                {{end}}
+            </div>
+        </div>
+        <button type="submit" class="btn">Save Product</button>
+        <a href="/site/{{.Website.ID}}/products" class="btn" style="background: #6c757d; margin-left: 10px;">Cancel</a>
+    </form>
+</div>
+{{end}}

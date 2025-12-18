@@ -21,6 +21,14 @@ type EnvironmentConfig struct {
 	HTTP struct {
 		Port string `json:"port"`
 	} `json:"http"`
+	Admin struct {
+		Enabled  bool   `json:"enabled"`
+		Port     string `json:"port"`
+		Password string `json:"password"`
+		Database struct {
+			Name string `json:"name"`
+		} `json:"database"`
+	} `json:"admin"`
 }
 
 func ReadEnvironmentConfig(prodMode bool, hideErrors bool) (EnvironmentConfig, error) {
@@ -53,6 +61,16 @@ func ReadEnvironmentConfig(prodMode bool, hideErrors bool) (EnvironmentConfig, e
 	// default port
 	if envConfig.HTTP.Port == "" {
 		envConfig.HTTP.Port = "80"
+	}
+
+	// default admin port
+	if envConfig.Admin.Port == "" {
+		envConfig.Admin.Port = "8081"
+	}
+
+	// default admin database name
+	if envConfig.Admin.Database.Name == "" {
+		envConfig.Admin.Database.Name = "stencil_admin"
 	}
 
 	return envConfig, nil

@@ -23,6 +23,10 @@ type PageData struct {
 	Categories       []structs.Category
 	Post             structs.Post
 	Posts            []structs.Post
+	Product          structs.Product
+	Products         []structs.Product
+	Collection       structs.Collection
+	Collections      []structs.Collection
 	ErrorString      string
 	StatusCode       int
 	Template         configs.TemplateConfig

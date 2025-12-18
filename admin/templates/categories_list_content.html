@@ -1,0 +1,52 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>Categories</h2>
+    <p>Organize content for {{.Website.SiteName}}</p>
+</div>
+
+<div class="card">
+    <h3>Create New Category</h3>
+    <form method="POST" action="/site/{{.Website.ID}}/categories/new">
+        <div class="form-group">
+            <label>Category Name:</label>
+            <input type="text" name="name" placeholder="Enter category name" required>
+        </div>
+        <button type="submit" class="btn btn-success">Add Category</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>All Categories</h3>
+    {{if .Categories}}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Slug</th>
+                <th>Article Count</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Categories}}
+            <tr>
+                <td><strong>{{.Name}}</strong></td>
+                <td><code>{{.Slug}}</code></td>
+                <td>{{.Count}}</td>
+                <td>
+                    <form method="POST" action="/site/{{$.Website.ID}}/categories/{{.ID}}/delete" style="display:inline;" onsubmit="return confirm('Delete this category?');">
+                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <div class="empty-state">
+        <h3>No categories yet</h3>
+        <p>Create your first category to organize content.</p>
+    </div>
+    {{end}}
+</div>
+{{end}}

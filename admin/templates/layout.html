@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} - stencil</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: #f5f7fa; }
+
+        /* Top Header */
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 0 20px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+        }
+        .header-left { display: flex; align-items: center; gap: 20px; }
+        .header h1 { font-size: 20px; font-weight: 600; }
+        .site-selector {
+            background: #34495e;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            min-width: 200px;
+        }
+        .site-selector:hover { background: #3d566e; }
+        .header-right a {
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        .header-right a:hover { background: rgba(255,255,255,0.1); }
+
+        /* Sidebar */
+        .sidebar {
+            background: white;
+            width: 240px;
+            position: fixed;
+            top: 60px;
+            left: 0;
+            bottom: 0;
+            border-right: 1px solid #e1e8ed;
+            overflow-y: auto;
+        }
+        .sidebar-section {
+            padding: 20px 0;
+            border-bottom: 1px solid #e1e8ed;
+        }
+        .sidebar-section h3 {
+            padding: 0 20px 10px;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #95a5a6;
+            font-weight: 600;
+        }
+        .sidebar-link {
+            display: block;
+            padding: 10px 20px;
+            color: #2c3e50;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .sidebar-link:hover {
+            background: #ecf0f1;
+            border-left: 3px solid #3498db;
+        }
+        .sidebar-link.active {
+            background: #e8f4f8;
+            border-left: 3px solid #3498db;
+            color: #3498db;
+            font-weight: 600;
+        }
+
+        /* Main Content */
+        .main {
+            margin-left: 240px;
+            margin-top: 60px;
+            padding: 30px;
+            min-height: calc(100vh - 60px);
+        }
+        .content-header {
+            margin-bottom: 30px;
+        }
+        .content-header h2 {
+            font-size: 28px;
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+        .content-header p {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+
+        /* Cards */
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .card h3 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: #2c3e50;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .btn:hover { background: #2980b9; }
+        .btn-success { background: #27ae60; }
+        .btn-success:hover { background: #229954; }
+        .btn-danger { background: #e74c3c; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-sm { padding: 6px 12px; font-size: 13px; }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ecf0f1;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 13px;
+            text-transform: uppercase;
+        }
+        tr:hover { background: #f8f9fa; }
+
+        /* Forms */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 14px;
+        }
+        .form-group input[type="text"],
+        .form-group input[type="email"],
+        .form-group input[type="number"],
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        .form-group textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #95a5a6;
+        }
+        .empty-state h3 {
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+
+        /* No Site Selected */
+        .no-site {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: calc(100vh - 60px);
+            text-align: center;
+        }
+        .no-site-content {
+            max-width: 400px;
+        }
+        .no-site-content h2 {
+            font-size: 24px;
+            color: #2c3e50;
+            margin-bottom: 12px;
+        }
+        .no-site-content p {
+            color: #7f8c8d;
+            margin-bottom: 24px;
+        }
+    </style>
+    <script>
+        function switchSite() {
+            const select = document.getElementById('site-selector');
+            const siteId = select.value;
+            if (siteId) {
+                window.location.href = '/site/' + siteId;
+            }
+        }
+    </script>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <h1>stencil</h1>
+            <select id="site-selector" class="site-selector" onchange="switchSite()">
+                <option value="">Select a site...</option>
+                {{range .AllSites}}
+                <option value="{{.ID}}" {{if $.CurrentSite}}{{if eq .ID $.CurrentSite.ID}}selected{{end}}{{end}}>
+                    {{.SiteName}}
+                </option>
+                {{end}}
+            </select>
+        </div>
+        <div class="header-right">
+            <a href="/logout">Logout</a>
+        </div>
+    </div>
+
+    {{if .CurrentSite}}
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-section">
+            <h3>Content</h3>
+            <a href="/site/{{.CurrentSite.ID}}/articles" class="sidebar-link {{if eq .ActiveSection "articles"}}active{{end}}">Articles</a>
+            <a href="/site/{{.CurrentSite.ID}}/categories" class="sidebar-link {{if eq .ActiveSection "categories"}}active{{end}}">Categories</a>
+            <a href="/site/{{.CurrentSite.ID}}/images" class="sidebar-link {{if eq .ActiveSection "images"}}active{{end}}">Images</a>
+        </div>
+        <div class="sidebar-section">
+            <h3>E-Commerce</h3>
+            <a href="/site/{{.CurrentSite.ID}}/products" class="sidebar-link {{if eq .ActiveSection "products"}}active{{end}}">Products</a>
+            <a href="/site/{{.CurrentSite.ID}}/collections" class="sidebar-link {{if eq .ActiveSection "collections"}}active{{end}}">Collections</a>
+        </div>
+        <div class="sidebar-section">
+            <h3>Settings</h3>
+            <a href="/site/{{.CurrentSite.ID}}/settings" class="sidebar-link {{if eq .ActiveSection "settings"}}active{{end}}">Site Settings</a>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main">
+        {{template "content" .}}
+    </div>
+    {{else}}
+    <!-- No Site Selected -->
+    <div class="main">
+        <div class="no-site">
+            <div class="no-site-content">
+                <h2>Welcome to stencil</h2>
+                <p>Select a website from the dropdown above to get started, or create a new one.</p>
+                <a href="/websites/new" class="btn">Create New Website</a>
+            </div>
+        </div>
+    </div>
+    {{end}}
+</body>
+</html>

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -74,9 +75,10 @@ func (db *DBConnection) GetSingularPost(vars map[string]string, params map[strin
 			A.title AS title,
 			A.type AS type,
 			A.published_date AS published_date,
-			A.modified AS modified,
-			A.updated AS updated,
+			A.updated_at AS modified,
+			A.updated_at AS updated,
 			A.content AS content,
+			A.description AS description,
 			A.deck AS deck,
 			A.coverline AS coverline,
 			A.status AS status,
@@ -88,10 +90,9 @@ func (db *DBConnection) GetSingularPost(vars map[string]string, params map[strin
 			B.categories AS categories,
 			B.tags AS tags,
 			B.image AS image,
-			ifnull(C.article_slide_id, 0) as duplication_id
+			0 as duplication_id
 		FROM articles_unified A
-			JOIN article_information B ON B.post_id = A.id
-			LEFT JOIN article_duplicates_slides C ON C.duplication_id = A.id
+			LEFT JOIN article_information B ON B.post_id = A.id
 		WHERE A.status = 'published' AND A.url = concat('/', ?)
 		ORDER BY A.published_date DESC
 		LIMIT 1;
@@ -105,9 +106,10 @@ func (db *DBConnection) GetSingularPost(vars map[string]string, params map[strin
 				A.title AS title,
 				A.type AS type,
 				A.published_date AS published_date,
-				A.modified AS modified,
-				A.updated AS updated,
+				A.updated_at AS modified,
+				A.updated_at AS updated,
 				A.content AS content,
+				A.description AS description,
 				A.deck AS deck,
 				A.coverline AS coverline,
 				A.status AS status,
@@ -119,22 +121,24 @@ func (db *DBConnection) GetSingularPost(vars map[string]string, params map[strin
 				B.categories AS categories,
 				B.tags AS tags,
 				B.image AS image,
-				ifnull(C.article_slide_id, 0) as duplication_id
+				0 as duplication_id
 			FROM history_articles_unified A
 				JOIN preview_article_information B ON B.post_id = A.id
-				LEFT JOIN article_duplicates_slides C ON C.duplication_id = A.id
 			WHERE A.url = concat('/', ?) AND A.status = 'preview_draft'
 			ORDER BY A.date_changed DESC
 			LIMIT 1;`
 	}
 
 	var post structs.Post
-	var authorsJSON, categoriesJSON, tagsJSON, imageJSON string
+	var authorsJSON, categoriesJSON, tagsJSON, imageJSON sql.NullString
+	var publishedDate sql.NullTime
+	var description, deck, coverline, canonicalURL, keywords sql.NullString
+	var thumbnailID sql.NullInt64
 
 	err := db.QueryRow(sqlQuery, vars["slug"]).Scan(
-		&post.ID, &post.Slug, &post.Title, &post.Type, &post.PublishedDate,
-		&post.Modified, &post.Updated, &post.Content, &post.Deck, &post.Coverline, &post.Status,
-		&post.ThumbnailID, &post.URL, &post.CanonicalURL, &post.Keywords, &authorsJSON,
+		&post.ID, &post.Slug, &post.Title, &post.Type, &publishedDate,
+		&post.Modified, &post.Updated, &post.Content, &description, &deck, &coverline, &post.Status,
+		&thumbnailID, &post.URL, &canonicalURL, &keywords, &authorsJSON,
 		&categoriesJSON, &tagsJSON, &imageJSON, &post.DuplicationID,
 	)
 
@@ -142,104 +146,43 @@ func (db *DBConnection) GetSingularPost(vars map[string]string, params map[strin
 		return structs.Post{}, err
 	}
 
-	json.Unmarshal([]byte(authorsJSON), &post.Authors)
-	json.Unmarshal([]byte(categoriesJSON), &post.Categories)
-	json.Unmarshal([]byte(tagsJSON), &post.Tags)
-	json.Unmarshal([]byte(imageJSON), &post.Image)
-
-	if post.Type == "gallery" || (post.Type == "article" && post.Content == "") {
-		slidesQuery := `
-			SELECT
-				A.slide_position,
-				A.title,
-				ifnull(A.pre_image_desc, '') as pre_image_desc,
-				ifnull(A.description, '') as description,
-				ifnull(B.id, 0) as id,
-				ifnull(B.url, '') as url,
-				ifnull(B.alt_text, '') as alt_text,
-				ifnull(B.credit, '') as credit,
-				ifnull(C.duplication_id, 0) as duplication_found
-			FROM article_slides A
-				LEFT JOIN images_unified B ON A.image_id = B.id
-				LEFT JOIN article_duplicates_slides C on A.post_id = C.article_slide_id
-			WHERE A.post_id in (?, ?)
-				AND B.url IS NOT NULL AND B.url <> ''
-			GROUP BY A.slide_position
-			ORDER BY A.slide_position ASC;
-		`
-
-		if params["preview"] == "true" {
-			slidesQuery = `
-				SELECT
-					A.slide_position,
-					A.title,
-					ifnull(A.pre_image_desc, '') as pre_image_desc,
-					ifnull(A.description, '') as description,
-					ifnull(B.id, 0) as id,
-					ifnull(B.url, '') as url,
-					ifnull(B.alt_text, '') as alt_text,
-					ifnull(B.credit, '') as credit,
-					ifnull(C.duplication_id, 0) as duplication_found
-				FROM preview_article_slides A
-					LEFT JOIN images_unified B ON A.image_id = B.id
-					LEFT JOIN article_duplicates_slides C ON A.post_id = C.duplication_id
-				WHERE A.post_id in (?, ?)
-				ORDER BY A.slide_position ASC;
-			`
-		}
-
-		rows, err := db.QueryRows(slidesQuery, post.ID, post.DuplicationID)
-		if err != nil {
-			return structs.Post{}, err
-		}
-		defer rows.Close()
-
-		var slides []structs.Slide
-		var filteredSlides []structs.Slide
-		var firstGallery *structs.Slide
-		var openingContent string
-
-		for rows.Next() {
-			var slide structs.Slide
-			var image structs.Image
-
-			err := rows.Scan(
-				&slide.SlidePosition, &slide.Title, &slide.PreImageDesc,
-				&slide.Description, &image.ID, &image.URL, &image.AltText, &image.Credit, &slide.DuplicationFound,
-			)
-			if err != nil {
-				return post, err
-			}
-
-			slide.Image = image
-			slide.Title = slide.Title
-
-			// Gather the pre_image_desc for the first slide (in case order is changed)
-			if slide.SlidePosition == 1 && slide.DuplicationFound != 0 {
-				openingContent = slide.PreImageDesc
-				slide.PreImageDesc = ""
-			}
-
-			// If this image is the one that SHOULD be first, save it
-			if image.ID == post.Image.ID && post.Image.ID != 0 && slide.DuplicationFound != 0 && firstGallery == nil {
-				firstGallery = &slide
-			} else {
-				slides = append(slides, slide)
-			}
-		}
-
-		if firstGallery != nil {
-			firstGallery.PreImageDesc = openingContent
-
-			// Add firstGallery to filteredSlides and then add the rest of the slides
-			filteredSlides = append(filteredSlides, *firstGallery)
-			filteredSlides = append(filteredSlides, slides...)
-
-			slides = filteredSlides
-		}
-
-		post.Slides = slides
+	if publishedDate.Valid {
+		post.PublishedDate = publishedDate.Time
 	}
+	if description.Valid {
+		post.Description = description.String
+	}
+	if deck.Valid {
+		post.Deck = deck.String
+	}
+	if coverline.Valid {
+		post.Coverline = coverline.String
+	}
+	if canonicalURL.Valid {
+		post.CanonicalURL = canonicalURL.String
+	}
+	if keywords.Valid {
+		post.Keywords = keywords.String
+	}
+	if thumbnailID.Valid {
+		post.ThumbnailID = int(thumbnailID.Int64)
+	}
+
+	if authorsJSON.Valid {
+		json.Unmarshal([]byte(authorsJSON.String), &post.Authors)
+	}
+	if categoriesJSON.Valid {
+		json.Unmarshal([]byte(categoriesJSON.String), &post.Categories)
+	}
+	if tagsJSON.Valid {
+		json.Unmarshal([]byte(tagsJSON.String), &post.Tags)
+	}
+	if imageJSON.Valid {
+		json.Unmarshal([]byte(imageJSON.String), &post.Image)
+	}
+
+	// Slides removed - not needed
+	post.Slides = []structs.Slide{}
 
 	post.ParseContent(&structs.ParserOptions{})
 
@@ -255,14 +198,9 @@ func (db *DBConnection) GetMultiplePosts(vars map[string]string, params map[stri
 		fullFeed = `A.content AS content,`
 	}
 
-	featured := `AND A.featured = 1`
-	if value, exists := params["featured"]; exists && value == "false" {
-		featured = ``
-	}
-
 	orderby := `A.published_date DESC`
 	if value, exists := params["sort"]; exists && value == "modified" {
-		orderby = `A.modified DESC`
+		orderby = `A.updated_at DESC`
 	}
 
 	offset, count := defaultOffsetCount(vars)
@@ -312,8 +250,8 @@ func (db *DBConnection) GetMultiplePosts(vars map[string]string, params map[stri
 			A.title AS title,
 			A.type AS type,
 			A.published_date AS published_date,
-			A.modified AS modified,
-			A.updated AS updated,
+			A.updated_at AS modified,
+			A.updated_at AS updated,
 			%s
 			A.deck AS deck,
 			A.coverline AS coverline,
@@ -325,16 +263,15 @@ func (db *DBConnection) GetMultiplePosts(vars map[string]string, params map[stri
 			B.categories AS categories,
 			B.tags AS tags,
 			B.image AS image,
-			ifnull(C.article_slide_id, 0) as duplication_id
+			0 as duplication_id
 		FROM articles_unified A
-		JOIN article_information B ON B.post_id = A.id
-		LEFT JOIN article_duplicates_slides C ON C.duplication_id = A.id
+		LEFT JOIN article_information B ON B.post_id = A.id
+		-- removed slides join
 		%s
 		WHERE A.status = 'published' AND A.type NOT IN ('page')	%s
-		%s
 		ORDER BY %s
 		LIMIT %d, %d;
-	`, fullFeed, queryJoin, featured, queryWhereAnd, orderby, offset, count)
+	`, fullFeed, queryJoin, queryWhereAnd, orderby, offset, count)
 
 	rows, err := db.QueryRows(sqlQuery, queryArgs...)
 	if err != nil {
@@ -346,20 +283,50 @@ func (db *DBConnection) GetMultiplePosts(vars map[string]string, params map[stri
 
 	for rows.Next() {
 		var post structs.Post
-		var authorsJSON, categoriesJSON, tagsJSON, imageJSON string
+		var authorsJSON, categoriesJSON, tagsJSON, imageJSON sql.NullString
+		var publishedDate sql.NullTime
+		var deck, coverline, canonicalURL, keywords sql.NullString
+		var thumbnailID sql.NullInt64
 		if err := rows.Scan(
-			&post.ID, &post.Slug, &post.Title, &post.Type, &post.PublishedDate,
-			&post.Modified, &post.Updated, &post.Content, &post.Deck, &post.Coverline, &post.ThumbnailID,
-			&post.URL, &post.CanonicalURL, &post.Keywords, &authorsJSON, &categoriesJSON,
+			&post.ID, &post.Slug, &post.Title, &post.Type, &publishedDate,
+			&post.Modified, &post.Updated, &post.Content, &deck, &coverline, &thumbnailID,
+			&post.URL, &canonicalURL, &keywords, &authorsJSON, &categoriesJSON,
 			&tagsJSON, &imageJSON, &post.DuplicationID,
 		); err != nil {
 			return nil, err
 		}
 
-		json.Unmarshal([]byte(authorsJSON), &post.Authors)
-		json.Unmarshal([]byte(categoriesJSON), &post.Categories)
-		json.Unmarshal([]byte(tagsJSON), &post.Tags)
-		json.Unmarshal([]byte(imageJSON), &post.Image)
+		if publishedDate.Valid {
+			post.PublishedDate = publishedDate.Time
+		}
+		if deck.Valid {
+			post.Deck = deck.String
+		}
+		if coverline.Valid {
+			post.Coverline = coverline.String
+		}
+		if canonicalURL.Valid {
+			post.CanonicalURL = canonicalURL.String
+		}
+		if keywords.Valid {
+			post.Keywords = keywords.String
+		}
+		if thumbnailID.Valid {
+			post.ThumbnailID = int(thumbnailID.Int64)
+		}
+
+		if authorsJSON.Valid {
+			json.Unmarshal([]byte(authorsJSON.String), &post.Authors)
+		}
+		if categoriesJSON.Valid {
+			json.Unmarshal([]byte(categoriesJSON.String), &post.Categories)
+		}
+		if tagsJSON.Valid {
+			json.Unmarshal([]byte(tagsJSON.String), &post.Tags)
+		}
+		if imageJSON.Valid {
+			json.Unmarshal([]byte(imageJSON.String), &post.Image)
+		}
 
 		// rearrange if requesting by taxonomy
 		if vars["slug"] != "" {
@@ -383,105 +350,6 @@ func (db *DBConnection) GetMultiplePosts(vars map[string]string, params map[stri
 		post.ParseContent(&structs.ParserOptions{})
 		posts = append(posts, post)
 	}
-
-	// This is so that if a gallery doens't have any slides, it won't be returned in the feed
-	var filteredPosts []structs.Post
-
-	if value, exists := params["full"]; exists && value == "true" {
-		for i, post := range posts {
-			if post.Type == "gallery" {
-				slidesQuery := `
-					SELECT
-						F.slide_position,
-						F.title,
-						ifnull(F.pre_image_desc, '') as pre_image_desc,
-						ifnull(F.description, '') as description,
-						ifnull(G.id, 0) as id,
-						ifnull(G.url, '') as url,
-						ifnull(G.alt_text, '') as alt_text,
-						ifnull(G.credit, '') as credit,
-						ifnull(H.duplication_id, 0) as duplication_found
-					FROM article_slides F
-						LEFT JOIN images_unified G ON F.image_id = G.id
-						LEFT JOIN article_duplicates_slides H on F.post_id = H.article_slide_id
-					WHERE F.post_id in (?, ?)
-						AND G.url IS NOT NULL AND G.url <> ''
-					GROUP BY F.slide_position
-					ORDER BY F.slide_position ASC;
-				`
-
-				rows, _ := db.QueryRows(slidesQuery, post.ID, post.DuplicationID)
-				defer rows.Close()
-				if err != nil {
-					return posts, err
-				}
-
-				var slides []structs.Slide
-				var filteredSlides []structs.Slide
-				var firstGallery *structs.Slide
-				var openingContent string
-				
-				for rows.Next() {
-					var slide structs.Slide
-					var image structs.Image
-
-					err := rows.Scan(
-						&slide.SlidePosition, &slide.Title, &slide.PreImageDesc,
-						&slide.Description, &image.ID, &image.URL, &image.AltText, &image.Credit, &slide.DuplicationFound,
-					)
-					
-					if err != nil {
-						return posts, err
-					}
-
-					slide.Image = image
-
-					// Gather the pre_image_desc for the first slide (in case order is changed for duplicates)
-					if slide.SlidePosition == 1 && slide.DuplicationFound != 0 {
-						openingContent = slide.PreImageDesc
-						slide.PreImageDesc = ""
-					}
-
-					// If this image is the one that SHOULD be first, save it
-					if image.ID == post.Image.ID && post.Image.ID != 0 && slide.DuplicationFound != 0 && firstGallery == nil {
-						firstGallery = &slide
-					} else {
-						slides = append(slides, slide)
-					}
-				}
-
-				if firstGallery != nil {
-					firstGallery.PreImageDesc = openingContent
-
-					// Add firstGallery to filteredSlides and then add the rest of the slides
-					filteredSlides = append(filteredSlides, *firstGallery)
-					filteredSlides = append(filteredSlides, slides...)
-
-					slides = filteredSlides
-				}
-
-				// Only add slides if there are any, otherwise remove this post from the posts array
-				if len(slides) > 0 {
-					posts[i].Slides = slides
-
-					posts[i].ParseContent(&structs.ParserOptions{})
-					filteredPosts = append(filteredPosts, posts[i])
-				}
-
-				// Re-set variables from this article to prepare for the next one
-				firstGallery = nil
-				openingContent = ""
-				slides = []structs.Slide{}
-				filteredSlides = []structs.Slide{}
-			} else {
-				posts[i].ParseContent(&structs.ParserOptions{})
-				filteredPosts = append(filteredPosts, posts[i])
-			}
-		}
-		
-		posts = filteredPosts
-	}
-
 
 	return posts, nil
 }

@@ -1,0 +1,39 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>{{.Website.SiteName}}</h2>
+    <p>Site overview and quick stats</p>
+</div>
+
+<div class="card">
+    <h3>Site Information</h3>
+    <table>
+        <tr>
+            <td><strong>Site Name:</strong></td>
+            <td>{{.Website.SiteName}}</td>
+        </tr>
+        <tr>
+            <td><strong>Database:</strong></td>
+            <td><code>{{.Website.ID}}</code></td>
+        </tr>
+    </table>
+</div>
+
+<div class="card">
+    <h3>Quick Actions</h3>
+    <a href="/site/{{.Website.ID}}/articles/new" class="btn btn-success">Create New Article</a>
+    <a href="/site/{{.Website.ID}}/products/new" class="btn btn-success">Create New Product</a>
+    <a href="/site/{{.Website.ID}}/settings" class="btn">Site Settings</a>
+</div>
+
+<div class="card">
+    <h3>Content Overview</h3>
+    <p>Use the sidebar navigation to manage your site's content:</p>
+    <ul style="list-style: none; padding: 0;">
+        <li style="padding: 8px 0;">📝 <a href="/site/{{.Website.ID}}/articles">Articles</a> - Manage blog posts and content</li>
+        <li style="padding: 8px 0;">🏷️ <a href="/site/{{.Website.ID}}/categories">Categories</a> - Organize your content</li>
+        <li style="padding: 8px 0;">🖼️ <a href="/site/{{.Website.ID}}/images">Images</a> - Upload and manage media</li>
+        <li style="padding: 8px 0;">🛍️ <a href="/site/{{.Website.ID}}/products">Products</a> - E-commerce catalog</li>
+        <li style="padding: 8px 0;">📦 <a href="/site/{{.Website.ID}}/collections">Collections</a> - Product groupings</li>
+    </ul>
+</div>
+{{end}}

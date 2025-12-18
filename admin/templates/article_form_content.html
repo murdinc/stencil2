@@ -1,0 +1,95 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>{{.FormTitle}}</h2>
+    <p>{{if .Article}}Edit article{{else}}Create a new article{{end}} for {{.Website.SiteName}}</p>
+</div>
+
+<div class="card">
+    <form method="POST" action="{{.Action}}" enctype="multipart/form-data">
+        <div class="form-group">
+            <label>Name:</label>
+            <input type="text" name="name" value="{{if .Article}}{{.Article.Name}}{{end}}">
+        </div>
+        <div class="form-group">
+            <label>URL:</label>
+            <input type="text" name="url" value="{{if .Article}}{{.Article.URL}}{{end}}" required>
+        </div>
+        <div class="form-group">
+            <label>Title:</label>
+            <input type="text" name="title" value="{{if .Article}}{{.Article.Title}}{{end}}" required>
+        </div>
+        <div class="form-group">
+            <label>Description:</label>
+            <textarea name="description">{{if .Article}}{{.Article.Description}}{{end}}</textarea>
+        </div>
+        <div class="form-group">
+            <label>Content:</label>
+            <textarea name="content">{{if .Article}}{{.Article.Content}}{{end}}</textarea>
+        </div>
+        <div class="form-group">
+            <label>Excerpt:</label>
+            <textarea name="excerpt" style="min-height:100px;">{{if .Article}}{{.Article.Excerpt}}{{end}}</textarea>
+        </div>
+        <div class="form-group">
+            <label>Type:</label>
+            <select name="type">
+                <option value="article" {{if .Article}}{{if eq .Article.Type "article"}}selected{{end}}{{end}}>Article</option>
+                <option value="page" {{if .Article}}{{if eq .Article.Type "page"}}selected{{end}}{{end}}>Page</option>
+                <option value="gallery" {{if .Article}}{{if eq .Article.Type "gallery"}}selected{{end}}{{end}}>Gallery</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Status:</label>
+            <select name="status">
+                <option value="draft" {{if .Article}}{{if eq .Article.Status "draft"}}selected{{end}}{{end}}>Draft</option>
+                <option value="published" {{if .Article}}{{if eq .Article.Status "published"}}selected{{end}}{{end}}>Published</option>
+                <option value="archived" {{if .Article}}{{if eq .Article.Status "archived"}}selected{{end}}{{end}}>Archived</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Published Date:</label>
+            <input type="datetime-local" name="published_date" value="{{if .Article}}{{if not .Article.PublishedDate.IsZero}}{{.Article.PublishedDate.Format "2006-01-02T15:04"}}{{end}}{{end}}">
+            <p style="font-size: 12px; color: #7f8c8d; margin: 5px 0 0 0;">Leave empty to use current date/time when publishing</p>
+        </div>
+        <div class="form-group">
+            <label>Categories:</label>
+            <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px;">
+                {{if .Categories}}
+                    {{range .Categories}}
+                    <label style="display: block; margin-bottom: 8px;">
+                        <input type="checkbox" name="categories[]" value="{{.ID}}"
+                            {{if $.Article}}{{range $.ArticleCategories}}{{if eq .ID $.ID}}checked{{end}}{{end}}{{end}}>
+                        {{.Name}}
+                    </label>
+                    {{end}}
+                {{else}}
+                    <p style="color: #7f8c8d; margin: 0;">No categories available. <a href="/site/{{.Website.ID}}/categories">Create one</a>.</p>
+                {{end}}
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Featured Image:</label>
+            <div style="border: 1px solid #ddd; border-radius: 4px; padding: 10px;">
+                {{if .Images}}
+                <div style="margin-bottom: 10px;">
+                    <label>Select existing image:</label>
+                    <select name="image_id" style="width: 100%; padding: 8px;">
+                        <option value="">-- None --</option>
+                        {{range .Images}}
+                        <option value="{{.ID}}" {{if $.Article}}{{if eq $.Article.ImageID .ID}}selected{{end}}{{end}}>{{.Filename}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                {{end}}
+                <div>
+                    <label>Or upload new image:</label>
+                    <input type="file" name="new_image" accept="image/*" style="width: 100%;">
+                    <p style="font-size: 12px; color: #7f8c8d; margin: 5px 0 0 0;">If you upload a new image, it will be used instead of the selected one above.</p>
+                </div>
+            </div>
+        </div>
+        <button type="submit" class="btn">Save Article</button>
+        <a href="/site/{{.Website.ID}}/articles" class="btn" style="background: #6c757d; margin-left: 10px;">Cancel</a>
+    </form>
+</div>
+{{end}}

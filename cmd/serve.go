@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/hostrouter"
 	"github.com/spf13/cobra"
 
+	"github.com/murdinc/stencil2/admin"
 	"github.com/murdinc/stencil2/configs"
 	"github.com/murdinc/stencil2/frontend"
 )
@@ -82,6 +83,20 @@ func serve() {
 		// start file watcher on dev
 		if ProdMode == false {
 			go website.StartWatcher()
+		}
+	}
+
+	// Start admin server if enabled
+	if envConfig.Admin.Enabled {
+		adminServer, err := admin.NewAdminServer(envConfig)
+		if err != nil {
+			log.Printf("Warning: Failed to start admin server: %v", err)
+		} else {
+			go func() {
+				if err := adminServer.Start(); err != nil {
+					log.Printf("Admin server error: %v", err)
+				}
+			}()
 		}
 	}
 

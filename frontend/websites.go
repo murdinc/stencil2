@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/murdinc/stencil2/api"
 	"github.com/murdinc/stencil2/configs"
@@ -36,7 +37,7 @@ func NewWebsite(envConfig configs.EnvironmentConfig, websiteConfig configs.Websi
 	dbConn := &database.DBConnection{}
 
 	// Open a connection to the MySQL database
-	err := dbConn.Connect(envConfig.Database.User, envConfig.Database.Password, envConfig.Database.Host, envConfig.Database.Port, websiteConfig.Database.Name, 1000)
+	err := dbConn.Connect(envConfig.Database.User, envConfig.Database.Password, envConfig.Database.Host, envConfig.Database.Port, websiteConfig.Database.Name, 10*time.Second)
 	if err != nil {
 		log.Fatalf("Failed to connect to the database: %v", err)
 	}
@@ -46,6 +47,18 @@ func NewWebsite(envConfig configs.EnvironmentConfig, websiteConfig configs.Websi
 		err = dbConn.Database.Ping()
 		if err != nil {
 			return nil, err
+		}
+
+		// Initialize article/content tables if they don't exist
+		err = dbConn.InitArticleTables()
+		if err != nil {
+			log.Printf("Warning: Failed to initialize article tables: %v", err)
+		}
+
+		// Initialize e-commerce tables if they don't exist
+		err = dbConn.InitEcommerceTables()
+		if err != nil {
+			log.Printf("Warning: Failed to initialize e-commerce tables: %v", err)
 		}
 	}
 

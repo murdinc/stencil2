@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Products - {{.Website.SiteName}} - Stencil2 Admin</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
+        .header { background: #333; color: white; padding: 15px 30px; }
+        .header h1 { margin: 0; font-size: 24px; }
+        .container { max-width: 1200px; margin: 30px auto; padding: 0 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .btn { display: inline-block; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; margin-bottom: 20px; }
+        .btn:hover { background: #0056b3; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background: #f8f9fa; font-weight: bold; }
+        .actions a { margin-right: 10px; color: #007bff; text-decoration: none; }
+        .actions a:hover { text-decoration: underline; }
+        .back-link { display: inline-block; margin-bottom: 20px; color: #007bff; text-decoration: none; }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Stencil2 Admin - {{.Website.SiteName}}</h1>
+    </div>
+    <div class="container">
+        <a href="/" class="back-link">← Back to Dashboard</a>
+        <div class="card">
+            <h2>Products</h2>
+            <a href="/websites/{{.Website.ID}}/products/new" class="btn">Create New Product</a>
+            {{if .Products}}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Slug</th>
+                        <th>Price</th>
+                        <th>SKU</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Products}}
+                    <tr>
+                        <td>{{.Name}}</td>
+                        <td>{{.Slug}}</td>
+                        <td>${{printf "%.2f" .Price}}</td>
+                        <td>{{.SKU}}</td>
+                        <td>{{.Status}}</td>
+                        <td class="actions">
+                            <a href="/websites/{{$.Website.ID}}/products/{{.ID}}/edit">Edit</a>
+                            <form method="POST" action="/websites/{{$.Website.ID}}/products/{{.ID}}/delete" style="display:inline;" onsubmit="return confirm('Delete this product?');">
+                                <button type="submit" style="background:none;border:none;color:#dc3545;cursor:pointer;padding:0;">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+            {{else}}
+            <p>No products yet. <a href="/websites/{{.Website.ID}}/products/new">Create one</a>.</p>
+            {{end}}
+        </div>
+    </div>
+</body>
+</html>

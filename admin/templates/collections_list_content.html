@@ -1,0 +1,54 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>Collections</h2>
+    <p>Manage product collections for {{.Website.SiteName}}</p>
+</div>
+
+<div class="card">
+    <h3>Create New Collection</h3>
+    <form method="POST" action="/site/{{.Website.ID}}/collections/new">
+        <div class="form-group">
+            <label>Collection Name:</label>
+            <input type="text" name="name" placeholder="Enter collection name" required>
+        </div>
+        <button type="submit" class="btn btn-success">Add Collection</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>All Collections</h3>
+    {{if .Collections}}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Slug</th>
+                <th>Status</th>
+                <th>Sort Order</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Collections}}
+            <tr>
+                <td><strong>{{.Name}}</strong></td>
+                <td><code>{{.Slug}}</code></td>
+                <td>{{.Status}}</td>
+                <td>{{.SortOrder}}</td>
+                <td>
+                    <form method="POST" action="/site/{{$.Website.ID}}/collections/{{.ID}}/delete" style="display:inline;" onsubmit="return confirm('Delete this collection?');">
+                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <div class="empty-state">
+        <h3>No collections yet</h3>
+        <p>Create your first collection to organize products.</p>
+    </div>
+    {{end}}
+</div>
+{{end}}

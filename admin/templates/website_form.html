@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{.Title}} - Stencil2 Admin</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
+        .header { background: #333; color: white; padding: 15px 30px; }
+        .header h1 { margin: 0; font-size: 24px; }
+        .container { max-width: 800px; margin: 30px auto; padding: 0 20px; }
+        .card { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { padding: 12px 30px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .back-link { display: inline-block; margin-bottom: 20px; color: #007bff; text-decoration: none; }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Stencil2 Admin</h1>
+    </div>
+    <div class="container">
+        <a href="/" class="back-link">← Back to Dashboard</a>
+        <div class="card">
+            <h2>{{.Title}}</h2>
+            <form method="POST" action="{{.Action}}">
+                <div class="form-group">
+                    <label>Site Name:</label>
+                    <input type="text" name="siteName" value="{{if .Website}}{{.Website.SiteName}}{{end}}" required>
+                </div>
+                <div class="form-group">
+                    <label>Directory (relative to websites/):</label>
+                    <input type="text" name="directory" value="{{if .Website}}{{.Website.Directory}}{{end}}" required>
+                </div>
+                <div class="form-group">
+                    <label>Database Name:</label>
+                    <input type="text" name="databaseName" value="{{if .Website}}{{.Website.DatabaseName}}{{end}}" required>
+                </div>
+                <div class="form-group">
+                    <label>HTTP Address:</label>
+                    <input type="text" name="httpAddress" value="{{if .Website}}{{.Website.HTTPAddress}}{{end}}" placeholder="example.com">
+                </div>
+                <div class="form-group">
+                    <label>Media Proxy URL (optional):</label>
+                    <input type="text" name="mediaProxyUrl" value="{{if .Website}}{{.Website.MediaProxyURL}}{{end}}" placeholder="https://media.example.com">
+                </div>
+                <button type="submit">Save</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
