@@ -7,16 +7,13 @@
 <div class="card">
     <form method="POST" action="{{.Action}}" enctype="multipart/form-data">
         <div class="form-group">
-            <label>Name:</label>
-            <input type="text" name="name" value="{{if .Article}}{{.Article.Name}}{{end}}">
-        </div>
-        <div class="form-group">
-            <label>URL:</label>
-            <input type="text" name="url" value="{{if .Article}}{{.Article.URL}}{{end}}" required>
-        </div>
-        <div class="form-group">
             <label>Title:</label>
             <input type="text" name="title" value="{{if .Article}}{{.Article.Title}}{{end}}" required>
+        </div>
+        <div class="form-group">
+            <label>Slug:</label>
+            <input type="text" name="slug" value="{{if .Article}}{{.Article.Slug}}{{end}}" required>
+            <p style="font-size: 12px; color: #7f8c8d; margin: 5px 0 0 0;">URL-friendly version (e.g., "my-article-slug")</p>
         </div>
         <div class="form-group">
             <label>Description:</label>
@@ -24,7 +21,7 @@
         </div>
         <div class="form-group">
             <label>Content:</label>
-            <textarea name="content">{{if .Article}}{{.Article.Content}}{{end}}</textarea>
+            <textarea name="content" id="content-editor">{{if .Article}}{{.Article.Content}}{{end}}</textarea>
         </div>
         <div class="form-group">
             <label>Excerpt:</label>
@@ -55,11 +52,11 @@
             <label>Categories:</label>
             <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px;">
                 {{if .Categories}}
-                    {{range .Categories}}
+                    {{range $category := .Categories}}
                     <label style="display: block; margin-bottom: 8px;">
-                        <input type="checkbox" name="categories[]" value="{{.ID}}"
-                            {{if $.Article}}{{range $.ArticleCategories}}{{if eq .ID $.ID}}checked{{end}}{{end}}{{end}}>
-                        {{.Name}}
+                        <input type="checkbox" name="categories[]" value="{{$category.ID}}"
+                            {{if $.Article}}{{range $.ArticleCategories}}{{if eq .ID $category.ID}}checked{{end}}{{end}}{{end}}>
+                        {{$category.Name}}
                     </label>
                     {{end}}
                 {{else}}
@@ -70,20 +67,39 @@
         <div class="form-group">
             <label>Featured Image:</label>
             <div style="border: 1px solid #ddd; border-radius: 4px; padding: 10px;">
+                {{if $.Article}}{{if $.Article.ThumbnailID}}
+                <div style="margin-bottom: 10px;">
+                    <p style="font-size: 12px; color: #27ae60; margin: 0 0 5px 0;">Current image:</p>
+                    {{range .Images}}
+                        {{if eq .ID $.Article.ThumbnailID}}
+                        <img src="{{.URL}}" alt="{{.AltText}}" style="max-width: 200px; max-height: 200px; object-fit: cover; border: 1px solid #ddd; border-radius: 4px;">
+                        <p style="font-size: 12px; color: #7f8c8d; margin: 5px 0;">{{.Filename}}</p>
+                        {{end}}
+                    {{end}}
+                </div>
+                {{end}}{{end}}
                 {{if .Images}}
                 <div style="margin-bottom: 10px;">
                     <label>Select existing image:</label>
                     <select name="image_id" style="width: 100%; padding: 8px;">
                         <option value="">-- None --</option>
                         {{range .Images}}
-                        <option value="{{.ID}}" {{if $.Article}}{{if eq $.Article.ImageID .ID}}selected{{end}}{{end}}>{{.Filename}}</option>
+                        <option value="{{.ID}}" {{if $.Article}}{{if eq $.Article.ThumbnailID .ID}}selected{{end}}{{end}}>{{.Filename}}</option>
                         {{end}}
                     </select>
                 </div>
                 {{end}}
                 <div>
                     <label>Or upload new image:</label>
-                    <input type="file" name="new_image" accept="image/*" style="width: 100%;">
+                    <input type="file" name="new_image" accept="image/*" style="width: 100%; margin-bottom: 10px;">
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 12px;">Alt text for new image:</label>
+                        <input type="text" name="image_alt" placeholder="Describe the image" style="width: 100%; padding: 6px;">
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 12px;">Credit for new image:</label>
+                        <input type="text" name="image_credit" placeholder="Photo by..." style="width: 100%; padding: 6px;">
+                    </div>
                     <p style="font-size: 12px; color: #7f8c8d; margin: 5px 0 0 0;">If you upload a new image, it will be used instead of the selected one above.</p>
                 </div>
             </div>
@@ -92,4 +108,55 @@
         <a href="/site/{{.Website.ID}}/articles" class="btn" style="background: #6c757d; margin-left: 10px;">Cancel</a>
     </form>
 </div>
+
+<script src="https://cdn.ckeditor.com/ckeditor5/41.1.0/classic/ckeditor.js"></script>
+<script>
+    ClassicEditor
+        .create(document.querySelector('#content-editor'), {
+            toolbar: {
+                items: [
+                    'heading', '|',
+                    'bold', 'italic', 'link', '|',
+                    'bulletedList', 'numberedList', '|',
+                    'blockQuote', 'insertTable', '|',
+                    'undo', 'redo', '|',
+                    'sourceEditing'
+                ]
+            },
+            heading: {
+                options: [
+                    { model: 'paragraph', title: 'Paragraph', class: 'ck-heading_paragraph' },
+                    { model: 'heading2', view: 'h2', title: 'Heading 2', class: 'ck-heading_heading2' },
+                    { model: 'heading3', view: 'h3', title: 'Heading 3', class: 'ck-heading_heading3' }
+                ]
+            },
+            link: {
+                decorators: {
+                    openInNewTab: {
+                        mode: 'manual',
+                        label: 'Open in new tab',
+                        attributes: {
+                            target: '_blank',
+                            rel: 'noopener noreferrer'
+                        }
+                    }
+                }
+            },
+            table: {
+                contentToolbar: [ 'tableColumn', 'tableRow', 'mergeTableCells' ]
+            }
+        })
+        .then(editor => {
+            window.editor = editor;
+
+            // Update the textarea with CKEditor content before form submission
+            const form = document.querySelector('form');
+            form.addEventListener('submit', function() {
+                document.querySelector('#content-editor').value = editor.getData();
+            });
+        })
+        .catch(error => {
+            console.error('Error initializing CKEditor:', error);
+        });
+</script>
 {{end}}

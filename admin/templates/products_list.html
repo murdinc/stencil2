@@ -37,6 +37,7 @@
                         <th>Price</th>
                         <th>SKU</th>
                         <th>Status</th>
+                        <th>Featured</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -48,6 +49,7 @@
                         <td>${{printf "%.2f" .Price}}</td>
                         <td>{{.SKU}}</td>
                         <td>{{.Status}}</td>
+                        <td>{{if .Featured}}⭐{{end}}</td>
                         <td class="actions">
                             <a href="/websites/{{$.Website.ID}}/products/{{.ID}}/edit">Edit</a>
                             <form method="POST" action="/websites/{{$.Website.ID}}/products/{{.ID}}/delete" style="display:inline;" onsubmit="return confirm('Delete this product?');">

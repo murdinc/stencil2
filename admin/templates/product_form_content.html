@@ -5,7 +5,7 @@
 </div>
 
 <div class="card">
-    <form method="POST" action="{{.Action}}">
+    <form method="POST" action="{{.Action}}" enctype="multipart/form-data">
         <div class="form-group">
             <label>Name:</label>
             <input type="text" name="name" value="{{if .Product}}{{.Product.Name}}{{end}}" required>
@@ -71,6 +71,56 @@
                 {{end}}
             </div>
         </div>
+
+        <div class="form-group">
+            <label>Product Images:</label>
+            <div style="border: 1px solid #ddd; border-radius: 4px; padding: 15px;">
+                {{if $.Product}}
+                <div id="current-images" style="margin-bottom: 15px;">
+                    <p style="font-size: 12px; color: #27ae60; margin: 0 0 10px 0;">Current images:</p>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                        {{range .ProductImages}}
+                        <div style="position: relative; border: 1px solid #ddd; border-radius: 4px; padding: 5px;">
+                            <img src="{{.Image.URL}}" alt="{{.Image.AltText}}" style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px;">
+                            <div style="font-size: 10px; color: #7f8c8d; margin-top: 5px; text-align: center;">Position: {{.Position}}</div>
+                            <label style="display: block; margin-top: 5px; font-size: 11px;">
+                                <input type="checkbox" name="remove_images[]" value="{{.ID}}" style="width: auto; margin-right: 3px;">
+                                Remove
+                            </label>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+                {{end}}
+
+                {{if .Images}}
+                <div style="margin-bottom: 15px;">
+                    <label>Select existing images:</label>
+                    <p style="font-size: 12px; color: #7f8c8d; margin: 5px 0 10px 0;">Hold Ctrl/Cmd to select multiple images</p>
+                    <select name="existing_images[]" multiple style="width: 100%; height: 120px;">
+                        {{range .Images}}
+                        <option value="{{.ID}}">{{if .Filename}}{{.Filename}}{{else}}{{.URL}}{{end}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                {{end}}
+
+                <div>
+                    <label>Or upload new images:</label>
+                    <input type="file" name="product_images" accept="image/*" multiple style="width: 100%; margin-bottom: 10px;">
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 12px;">Alt text for new images (optional):</label>
+                        <input type="text" name="new_images_alt" placeholder="Describe the images" style="width: 100%; padding: 6px;">
+                    </div>
+                    <div>
+                        <label style="font-size: 12px;">Credit for new images (optional):</label>
+                        <input type="text" name="new_images_credit" placeholder="Photo by..." style="width: 100%; padding: 6px;">
+                    </div>
+                    <p style="font-size: 12px; color: #7f8c8d; margin: 10px 0 0 0;">You can upload multiple images at once. They will be added in the order selected.</p>
+                </div>
+            </div>
+        </div>
+
         <button type="submit" class="btn">Save Product</button>
         <a href="/site/{{.Website.ID}}/products" class="btn" style="background: #6c757d; margin-left: 10px;">Cancel</a>
     </form>

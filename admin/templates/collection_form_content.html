@@ -1,0 +1,72 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>{{.Title}}</h2>
+    <p>Edit collection for {{.Website.SiteName}}</p>
+</div>
+
+<div class="card">
+    <form method="POST" action="{{.Action}}" enctype="multipart/form-data">
+        <div class="form-group">
+            <label>Name:</label>
+            <input type="text" name="name" value="{{if .Collection}}{{.Collection.Name}}{{end}}" required>
+        </div>
+        <div class="form-group">
+            <label>Slug:</label>
+            <input type="text" name="slug" value="{{if .Collection}}{{.Collection.Slug}}{{end}}" required>
+        </div>
+        <div class="form-group">
+            <label>Description:</label>
+            <textarea name="description">{{if .Collection}}{{.Collection.Description}}{{end}}</textarea>
+        </div>
+        <div class="form-group">
+            <label>Status:</label>
+            <select name="status">
+                <option value="draft" {{if .Collection}}{{if eq .Collection.Status "draft"}}selected{{end}}{{end}}>Draft</option>
+                <option value="published" {{if .Collection}}{{if eq .Collection.Status "published"}}selected{{end}}{{else}}selected{{end}}>Published</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Collection Image:</label>
+            <div style="border: 1px solid #ddd; border-radius: 4px; padding: 15px;">
+                {{if .Collection}}{{if .CollectionImage}}
+                <div style="margin-bottom: 15px;">
+                    <p style="font-size: 12px; color: #27ae60; margin: 0 0 10px 0;">Current image:</p>
+                    <img src="{{.CollectionImage.URL}}" alt="{{.CollectionImage.AltText}}" style="max-width: 200px; max-height: 200px; object-fit: cover; border: 1px solid #ddd; border-radius: 4px;">
+                    <p style="font-size: 12px; color: #7f8c8d; margin: 5px 0;">{{.CollectionImage.Filename}}</p>
+                </div>
+                {{end}}{{end}}
+
+                {{if .Images}}
+                <div style="margin-bottom: 15px;">
+                    <label>Select existing image:</label>
+                    <select name="image_id" style="width: 100%; padding: 8px;">
+                        <option value="">-- None --</option>
+                        {{range .Images}}
+                        <option value="{{.ID}}" {{if $.Collection}}{{if eq $.Collection.ImageID .ID}}selected{{end}}{{end}}>{{if .Filename}}{{.Filename}}{{else}}{{.URL}}{{end}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                {{end}}
+
+                <div>
+                    <label>Or upload new image:</label>
+                    <input type="file" name="new_image" accept="image/*" style="width: 100%; margin-bottom: 10px;">
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 12px;">Alt text for new image:</label>
+                        <input type="text" name="image_alt" placeholder="Describe the image" style="width: 100%; padding: 6px;">
+                    </div>
+                    <div>
+                        <label style="font-size: 12px;">Credit for new image:</label>
+                        <input type="text" name="image_credit" placeholder="Photo by..." style="width: 100%; padding: 6px;">
+                    </div>
+                    <p style="font-size: 12px; color: #7f8c8d; margin: 10px 0 0 0;">If you upload a new image, it will be used instead of the selected one above.</p>
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-success">Save Collection</button>
+        <a href="/site/{{.Website.ID}}/collections" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+{{end}}

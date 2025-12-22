@@ -15,6 +15,10 @@
             <label>Alt Text:</label>
             <input type="text" name="alt" placeholder="Describe the image">
         </div>
+        <div class="form-group">
+            <label>Credit:</label>
+            <input type="text" name="credit" placeholder="Photo by...">
+        </div>
         <button type="submit" class="btn btn-success">Upload Image</button>
     </form>
 </div>
@@ -28,6 +32,7 @@
                 <th>Preview</th>
                 <th>Filename</th>
                 <th>Alt Text</th>
+                <th>Credit</th>
                 <th>Size</th>
                 <th>Actions</th>
             </tr>
@@ -35,10 +40,11 @@
         <tbody>
             {{range .Images}}
             <tr>
-                <td><img src="{{.URL}}" alt="{{.Alt}}" style="max-width: 100px; max-height: 100px; object-fit: cover;"></td>
-                <td><code>{{.Filename}}</code></td>
-                <td>{{.Alt}}</td>
-                <td>{{.Size}}</td>
+                <td><img src="{{.URL}}" alt="{{.AltText}}" style="max-width: 100px; max-height: 100px; object-fit: cover;"></td>
+                <td><code>{{if .Filename}}{{.Filename}}{{else}}{{.URL}}{{end}}</code></td>
+                <td>{{.AltText}}</td>
+                <td>{{.Credit}}</td>
+                <td>{{formatBytes .Size}}</td>
                 <td>
                     <form method="POST" action="/site/{{$.Website.ID}}/images/{{.ID}}/delete" style="display:inline;" onsubmit="return confirm('Delete this image?');">
                         <button type="submit" class="btn btn-sm btn-danger">Delete</button>

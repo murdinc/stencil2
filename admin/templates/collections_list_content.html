@@ -24,7 +24,7 @@
                 <th>Name</th>
                 <th>Slug</th>
                 <th>Status</th>
-                <th>Sort Order</th>
+                <th>Reorder</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -34,8 +34,16 @@
                 <td><strong>{{.Name}}</strong></td>
                 <td><code>{{.Slug}}</code></td>
                 <td>{{.Status}}</td>
-                <td>{{.SortOrder}}</td>
+                <td style="white-space:nowrap;">
+                    <form method="POST" action="/site/{{$.Website.ID}}/collections/{{.ID}}/reorder/up" style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-success" style="padding:2px 8px;">↑</button>
+                    </form>
+                    <form method="POST" action="/site/{{$.Website.ID}}/collections/{{.ID}}/reorder/down" style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-success" style="padding:2px 8px;">↓</button>
+                    </form>
+                </td>
                 <td>
+                    <a href="/site/{{$.Website.ID}}/collections/{{.ID}}/edit" class="btn btn-sm btn-primary" style="margin-right:5px;">Edit</a>
                     <form method="POST" action="/site/{{$.Website.ID}}/collections/{{.ID}}/delete" style="display:inline;" onsubmit="return confirm('Delete this collection?');">
                         <button type="submit" class="btn btn-sm btn-danger">Delete</button>
                     </form>

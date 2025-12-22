@@ -20,6 +20,7 @@ type PageData struct {
 	HideErrors       bool
 	Slug             string
 	Page             string
+	Category         structs.Category
 	Categories       []structs.Category
 	Post             structs.Post
 	Posts            []structs.Post

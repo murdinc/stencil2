@@ -131,6 +131,14 @@ func (website *Website) GetRoute(name string) func(w http.ResponseWriter, r *htt
 				}
 				pageData.Posts = posts
 
+				// If filtering by category taxonomy, also fetch the category details
+				if vars["taxonomy"] == "category" && vars["slug"] != "" {
+					category, err := website.DBConn.GetCategoryBySlug(vars["slug"])
+					if err == nil {
+						pageData.Category = category
+					}
+				}
+
 			case "categories":
 				categories, err := website.DBConn.GetCategories(URLParams)
 				if err != nil {
@@ -164,6 +172,18 @@ func (website *Website) GetRoute(name string) func(w http.ResponseWriter, r *htt
 				}
 				if len(products) == 0 {
 					pageData.ErrorString = "No products available!"
+					pageData.StatusCode = 404
+				}
+				pageData.Products = products
+
+			case "featured-products":
+				products, err := website.DBConn.GetFeaturedProducts(vars, URLParams)
+				if err != nil {
+					pageData.ErrorDescription = err.Error()
+					pageData.StatusCode = 500
+				}
+				if len(products) == 0 {
+					pageData.ErrorString = "No featured products available!"
 					pageData.StatusCode = 404
 				}
 				pageData.Products = products

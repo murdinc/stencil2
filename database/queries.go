@@ -31,11 +31,12 @@ func (db *DBConnection) GetCategories(params map[string]string) ([]structs.Categ
 	}
 
 	sqlQuery := fmt.Sprintf(`
-		SELECT 
-			A.id, 
-			A.name, 
+		SELECT
+			A.id,
+			A.name,
 			A.slug,
-			ifnull(A.description, '') as description
+			ifnull(A.description, '') as description,
+			A.count
 			%s
 		FROM categories_unified A
 		%s
@@ -53,7 +54,7 @@ func (db *DBConnection) GetCategories(params map[string]string) ([]structs.Categ
 	for rows.Next() {
 		var category structs.Category
 		if err := rows.Scan(
-			&category.ID, &category.Name, &category.Slug, &category.Description,
+			&category.ID, &category.Name, &category.Slug, &category.Description, &category.Count,
 			&category.ImageUrl, &category.AltText,
 		); err != nil {
 			return nil, err
@@ -71,7 +72,7 @@ func (db *DBConnection) GetSingularPost(vars map[string]string, params map[strin
 	sqlQuery := `
 		SELECT
 			A.id AS id,
-			A.name AS slug,
+			A.slug AS slug,
 			A.title AS title,
 			A.type AS type,
 			A.published_date AS published_date,
@@ -83,17 +84,21 @@ func (db *DBConnection) GetSingularPost(vars map[string]string, params map[strin
 			A.coverline AS coverline,
 			A.status AS status,
 			A.thumbnail_id AS thumbnail_id,
-			A.url AS url,
+			A.slug AS url,
 			A.canonical_url AS canonical_url,
 			A.keywords AS keywords,
 			B.authors AS authors,
 			B.categories AS categories,
 			B.tags AS tags,
-			B.image AS image,
+			I.id AS image_id,
+			I.url AS image_url,
+			I.alt_text AS image_alt,
+			I.credit AS image_credit,
 			0 as duplication_id
 		FROM articles_unified A
 			LEFT JOIN article_information B ON B.post_id = A.id
-		WHERE A.status = 'published' AND A.url = concat('/', ?)
+			LEFT JOIN images_unified I ON I.id = A.thumbnail_id
+		WHERE A.status = 'published' AND A.slug = ?
 		ORDER BY A.published_date DESC
 		LIMIT 1;
 	`
@@ -102,7 +107,7 @@ func (db *DBConnection) GetSingularPost(vars map[string]string, params map[strin
 		sqlQuery = `
 			SELECT
 				A.id AS id,
-				A.name AS slug,
+				A.slug AS slug,
 				A.title AS title,
 				A.type AS type,
 				A.published_date AS published_date,
@@ -114,32 +119,38 @@ func (db *DBConnection) GetSingularPost(vars map[string]string, params map[strin
 				A.coverline AS coverline,
 				A.status AS status,
 				A.thumbnail_id AS thumbnail_id,
-				A.url AS url,
+				A.slug AS url,
 				A.canonical_url AS canonical_url,
 				A.keywords AS keywords,
 				B.authors AS authors,
 				B.categories AS categories,
 				B.tags AS tags,
-				B.image AS image,
+				I.id AS image_id,
+				I.url AS image_url,
+				I.alt_text AS image_alt,
+				I.credit AS image_credit,
 				0 as duplication_id
 			FROM history_articles_unified A
 				JOIN preview_article_information B ON B.post_id = A.id
-			WHERE A.url = concat('/', ?) AND A.status = 'preview_draft'
+				LEFT JOIN images_unified I ON I.id = A.thumbnail_id
+			WHERE A.slug = ? AND A.status = 'preview_draft'
 			ORDER BY A.date_changed DESC
 			LIMIT 1;`
 	}
 
 	var post structs.Post
-	var authorsJSON, categoriesJSON, tagsJSON, imageJSON sql.NullString
+	var authorsJSON, categoriesJSON, tagsJSON sql.NullString
 	var publishedDate sql.NullTime
 	var description, deck, coverline, canonicalURL, keywords sql.NullString
 	var thumbnailID sql.NullInt64
+	var imageID sql.NullInt64
+	var imageURL, imageAlt, imageCredit sql.NullString
 
 	err := db.QueryRow(sqlQuery, vars["slug"]).Scan(
 		&post.ID, &post.Slug, &post.Title, &post.Type, &publishedDate,
 		&post.Modified, &post.Updated, &post.Content, &description, &deck, &coverline, &post.Status,
 		&thumbnailID, &post.URL, &canonicalURL, &keywords, &authorsJSON,
-		&categoriesJSON, &tagsJSON, &imageJSON, &post.DuplicationID,
+		&categoriesJSON, &tagsJSON, &imageID, &imageURL, &imageAlt, &imageCredit, &post.DuplicationID,
 	)
 
 	if err != nil {
@@ -168,6 +179,20 @@ func (db *DBConnection) GetSingularPost(vars map[string]string, params map[strin
 		post.ThumbnailID = int(thumbnailID.Int64)
 	}
 
+	// Build image from joined data
+	if imageID.Valid {
+		post.Image.ID = int(imageID.Int64)
+	}
+	if imageURL.Valid {
+		post.Image.URL = imageURL.String
+	}
+	if imageAlt.Valid {
+		post.Image.AltText = imageAlt.String
+	}
+	if imageCredit.Valid {
+		post.Image.Credit = imageCredit.String
+	}
+
 	if authorsJSON.Valid {
 		json.Unmarshal([]byte(authorsJSON.String), &post.Authors)
 	}
@@ -176,9 +201,6 @@ func (db *DBConnection) GetSingularPost(vars map[string]string, params map[strin
 	}
 	if tagsJSON.Valid {
 		json.Unmarshal([]byte(tagsJSON.String), &post.Tags)
-	}
-	if imageJSON.Valid {
-		json.Unmarshal([]byte(imageJSON.String), &post.Image)
 	}
 
 	// Slides removed - not needed
@@ -246,7 +268,7 @@ func (db *DBConnection) GetMultiplePosts(vars map[string]string, params map[stri
 	sqlQuery := fmt.Sprintf(`
 		SELECT
 			A.id AS id,
-			A.name AS slug,
+			A.slug AS slug,
 			A.title AS title,
 			A.type AS type,
 			A.published_date AS published_date,
@@ -256,17 +278,20 @@ func (db *DBConnection) GetMultiplePosts(vars map[string]string, params map[stri
 			A.deck AS deck,
 			A.coverline AS coverline,
 			A.thumbnail_id AS thumbnail_id,
-			A.url AS url,
+			A.slug AS url,
 			A.canonical_url AS canonical_url,
 			A.keywords AS keywords,
 			B.authors AS authors,
 			B.categories AS categories,
 			B.tags AS tags,
-			B.image AS image,
+			I.id AS image_id,
+			I.url AS image_url,
+			I.alt_text AS image_alt,
+			I.credit AS image_credit,
 			0 as duplication_id
 		FROM articles_unified A
 		LEFT JOIN article_information B ON B.post_id = A.id
-		-- removed slides join
+		LEFT JOIN images_unified I ON I.id = A.thumbnail_id
 		%s
 		WHERE A.status = 'published' AND A.type NOT IN ('page')	%s
 		ORDER BY %s
@@ -283,15 +308,17 @@ func (db *DBConnection) GetMultiplePosts(vars map[string]string, params map[stri
 
 	for rows.Next() {
 		var post structs.Post
-		var authorsJSON, categoriesJSON, tagsJSON, imageJSON sql.NullString
+		var authorsJSON, categoriesJSON, tagsJSON sql.NullString
 		var publishedDate sql.NullTime
 		var deck, coverline, canonicalURL, keywords sql.NullString
 		var thumbnailID sql.NullInt64
+		var imageID sql.NullInt64
+		var imageURL, imageAlt, imageCredit sql.NullString
 		if err := rows.Scan(
 			&post.ID, &post.Slug, &post.Title, &post.Type, &publishedDate,
 			&post.Modified, &post.Updated, &post.Content, &deck, &coverline, &thumbnailID,
 			&post.URL, &canonicalURL, &keywords, &authorsJSON, &categoriesJSON,
-			&tagsJSON, &imageJSON, &post.DuplicationID,
+			&tagsJSON, &imageID, &imageURL, &imageAlt, &imageCredit, &post.DuplicationID,
 		); err != nil {
 			return nil, err
 		}
@@ -315,6 +342,20 @@ func (db *DBConnection) GetMultiplePosts(vars map[string]string, params map[stri
 			post.ThumbnailID = int(thumbnailID.Int64)
 		}
 
+		// Build image from joined data
+		if imageID.Valid {
+			post.Image.ID = int(imageID.Int64)
+		}
+		if imageURL.Valid {
+			post.Image.URL = imageURL.String
+		}
+		if imageAlt.Valid {
+			post.Image.AltText = imageAlt.String
+		}
+		if imageCredit.Valid {
+			post.Image.Credit = imageCredit.String
+		}
+
 		if authorsJSON.Valid {
 			json.Unmarshal([]byte(authorsJSON.String), &post.Authors)
 		}
@@ -323,9 +364,6 @@ func (db *DBConnection) GetMultiplePosts(vars map[string]string, params map[stri
 		}
 		if tagsJSON.Valid {
 			json.Unmarshal([]byte(tagsJSON.String), &post.Tags)
-		}
-		if imageJSON.Valid {
-			json.Unmarshal([]byte(imageJSON.String), &post.Image)
 		}
 
 		// rearrange if requesting by taxonomy
@@ -397,7 +435,7 @@ func (db *DBConnection) GetPublishedPostsByMonth(month time.Time) ([]structs.Pos
 	sqlQuery := `
 		SELECT
 			title,
-			name,
+			slug,
 			published_date,
 			modified,
 			updated,
@@ -468,4 +506,29 @@ func defaultOffsetCount(vars map[string]string) (int, int) {
 	}
 
 	return offset, count
+}
+
+// GetCategoryBySlug returns a single category by its slug
+func (db *DBConnection) GetCategoryBySlug(slug string) (structs.Category, error) {
+	sqlQuery := `
+		SELECT
+			A.id,
+			A.name,
+			A.slug,
+			ifnull(A.description, '') as description,
+			A.count
+		FROM categories_unified A
+		WHERE A.slug = ?
+		LIMIT 1
+	`
+
+	var category structs.Category
+	err := db.QueryRow(sqlQuery, slug).Scan(
+		&category.ID, &category.Name, &category.Slug, &category.Description, &category.Count,
+	)
+	if err != nil {
+		return structs.Category{}, err
+	}
+
+	return category, nil
 }

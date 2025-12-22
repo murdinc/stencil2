@@ -53,6 +53,8 @@ func (db *DBConnection) InitArticleTables() error {
 			id INT PRIMARY KEY AUTO_INCREMENT,
 			url VARCHAR(500) NOT NULL,
 			alt_text VARCHAR(255),
+			filename VARCHAR(255),
+			size BIGINT,
 			credit VARCHAR(255),
 			width INT,
 			height INT,
@@ -63,8 +65,7 @@ func (db *DBConnection) InitArticleTables() error {
 		// Articles table
 		`CREATE TABLE IF NOT EXISTS articles_unified (
 			id INT PRIMARY KEY AUTO_INCREMENT,
-			name VARCHAR(255),
-			url VARCHAR(500) UNIQUE NOT NULL,
+			slug VARCHAR(500) UNIQUE NOT NULL,
 			title VARCHAR(500) NOT NULL,
 			description TEXT,
 			content LONGTEXT,
@@ -79,7 +80,7 @@ func (db *DBConnection) InitArticleTables() error {
 			keywords TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-			INDEX idx_url (url),
+			INDEX idx_slug (slug),
 			INDEX idx_status (status),
 			INDEX idx_type (type),
 			INDEX idx_published_date (published_date)

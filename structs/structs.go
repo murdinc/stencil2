@@ -62,12 +62,13 @@ type Author struct {
 }
 
 type Category struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
-	Slug string `json:"slug"`
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
 	Description string `json:"description"`
-	ImageUrl string `json:"image_url"`
-	AltText string `json:"alt_text"`
+	Count       int    `json:"count"`
+	ImageUrl    string `json:"image_url"`
+	AltText     string `json:"alt_text"`
 }
 
 type Tag struct {

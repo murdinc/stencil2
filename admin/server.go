@@ -86,6 +86,9 @@ func (s *AdminServer) setupRoutes() {
 		// Collection management
 		r.Get("/site/{id}/collections", s.handleCollectionsList)
 		r.Post("/site/{id}/collections/new", s.handleCollectionCreate)
+		r.Get("/site/{id}/collections/{collectionId}/edit", s.handleCollectionEditForm)
+		r.Post("/site/{id}/collections/{collectionId}/edit", s.handleCollectionUpdate)
+		r.Post("/site/{id}/collections/{collectionId}/reorder/{direction}", s.handleCollectionReorder)
 		r.Post("/site/{id}/collections/{collectionId}/delete", s.handleCollectionDelete)
 
 		// Image management

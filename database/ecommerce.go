@@ -28,11 +28,13 @@ func (db *DBConnection) InitEcommerceTables() error {
 			inventory_quantity INT DEFAULT 0,
 			inventory_policy VARCHAR(50) DEFAULT 'deny',
 			status VARCHAR(50) DEFAULT 'draft',
+			featured BOOLEAN DEFAULT FALSE,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			released_date DATETIME,
 			INDEX idx_slug (slug),
-			INDEX idx_status (status)
+			INDEX idx_status (status),
+			INDEX idx_featured (featured)
 		)`,
 
 		// Collections table
@@ -174,7 +176,7 @@ func (db *DBConnection) GetProduct(slug string) (structs.Product, error) {
 	sqlQuery := `
 		SELECT
 			id, name, slug, description, price, compare_at_price,
-			sku, inventory_quantity, inventory_policy, status,
+			sku, inventory_quantity, inventory_policy, status, featured,
 			created_at, updated_at, released_date
 		FROM products_unified
 		WHERE slug = ? AND status = 'published'
@@ -186,7 +188,7 @@ func (db *DBConnection) GetProduct(slug string) (structs.Product, error) {
 	err := db.QueryRow(sqlQuery, slug).Scan(
 		&product.ID, &product.Name, &product.Slug, &product.Description,
 		&product.Price, &product.CompareAtPrice, &product.SKU,
-		&product.InventoryQuantity, &product.InventoryPolicy, &product.Status,
+		&product.InventoryQuantity, &product.InventoryPolicy, &product.Status, &product.Featured,
 		&product.CreatedAt, &product.UpdatedAt, &releasedDate,
 	)
 
@@ -242,7 +244,7 @@ func (db *DBConnection) GetProducts(vars map[string]string, params map[string]st
 	sqlQuery := fmt.Sprintf(`
 		SELECT
 			id, name, slug, description, price, compare_at_price,
-			sku, inventory_quantity, inventory_policy, status,
+			sku, inventory_quantity, inventory_policy, status, featured,
 			created_at, updated_at, released_date
 		FROM products_unified
 		WHERE status = 'published'
@@ -263,7 +265,70 @@ func (db *DBConnection) GetProducts(vars map[string]string, params map[string]st
 		err := rows.Scan(
 			&product.ID, &product.Name, &product.Slug, &product.Description,
 			&product.Price, &product.CompareAtPrice, &product.SKU,
-			&product.InventoryQuantity, &product.InventoryPolicy, &product.Status,
+			&product.InventoryQuantity, &product.InventoryPolicy, &product.Status, &product.Featured,
+			&product.CreatedAt, &product.UpdatedAt, &releasedDate,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if releasedDate.Valid {
+			product.ReleasedDate = releasedDate.Time
+		}
+
+		// Get product images
+		product.Images, _ = db.getProductImages(product.ID)
+
+		// Get product variants
+		product.Variants, _ = db.getProductVariants(product.ID)
+
+		products = append(products, product)
+	}
+
+	return products, nil
+}
+
+// GetFeaturedProducts retrieves featured products with pagination
+func (db *DBConnection) GetFeaturedProducts(vars map[string]string, params map[string]string) ([]structs.Product, error) {
+	offset, count := defaultOffsetCount(vars)
+
+	orderby := `released_date DESC`
+	if value, exists := params["sort"]; exists {
+		switch value {
+		case "price_asc":
+			orderby = `price ASC`
+		case "price_desc":
+			orderby = `price DESC`
+		case "name":
+			orderby = `name ASC`
+		}
+	}
+
+	sqlQuery := fmt.Sprintf(`
+		SELECT
+			id, name, slug, description, price, compare_at_price,
+			sku, inventory_quantity, inventory_policy, status, featured,
+			created_at, updated_at, released_date
+		FROM products_unified
+		WHERE status = 'published' AND featured = 1
+		ORDER BY %s
+		LIMIT %d, %d
+	`, orderby, offset, count)
+
+	rows, err := db.QueryRows(sqlQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var products []structs.Product
+	for rows.Next() {
+		var product structs.Product
+		var releasedDate sql.NullTime
+		err := rows.Scan(
+			&product.ID, &product.Name, &product.Slug, &product.Description,
+			&product.Price, &product.CompareAtPrice, &product.SKU,
+			&product.InventoryQuantity, &product.InventoryPolicy, &product.Status, &product.Featured,
 			&product.CreatedAt, &product.UpdatedAt, &releasedDate,
 		)
 		if err != nil {
@@ -378,7 +443,7 @@ func (db *DBConnection) GetCollectionProducts(collectionSlug string, vars map[st
 	sqlQuery := fmt.Sprintf(`
 		SELECT
 			p.id, p.name, p.slug, p.description, p.price, p.compare_at_price,
-			p.sku, p.inventory_quantity, p.inventory_policy, p.status,
+			p.sku, p.inventory_quantity, p.inventory_policy, p.status, p.featured,
 			p.created_at, p.updated_at, p.released_date
 		FROM products_unified p
 		JOIN product_collections pc ON p.id = pc.product_id
@@ -401,7 +466,7 @@ func (db *DBConnection) GetCollectionProducts(collectionSlug string, vars map[st
 		err := rows.Scan(
 			&product.ID, &product.Name, &product.Slug, &product.Description,
 			&product.Price, &product.CompareAtPrice, &product.SKU,
-			&product.InventoryQuantity, &product.InventoryPolicy, &product.Status,
+			&product.InventoryQuantity, &product.InventoryPolicy, &product.Status, &product.Featured,
 			&product.CreatedAt, &product.UpdatedAt, &releasedDate,
 		)
 		if err != nil {

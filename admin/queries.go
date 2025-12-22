@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -26,14 +27,14 @@ type Website struct {
 // Article represents an article/post
 type Article struct {
 	ID            int       `json:"id"`
-	Name          string    `json:"name"`
-	URL           string    `json:"url"`
+	Slug          string    `json:"slug"`
 	Title         string    `json:"title"`
 	Description   string    `json:"description"`
 	Content       string    `json:"content"`
 	Excerpt       string    `json:"excerpt"`
 	Type          string    `json:"type"`
 	Status        string    `json:"status"`
+	ThumbnailID   int       `json:"thumbnailId"`
 	PublishedDate time.Time `json:"publishedDate"`
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
@@ -85,6 +86,9 @@ type Image struct {
 	ID        int       `json:"id"`
 	URL       string    `json:"url"`
 	AltText   string    `json:"altText"`
+	Credit    string    `json:"credit"`
+	Filename  string    `json:"filename"`
+	Size      int64     `json:"size"`
 	Width     int       `json:"width"`
 	Height    int       `json:"height"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -286,7 +290,7 @@ func (s *AdminServer) GetArticles(websiteID string, limit, offset int) ([]Articl
 	}
 	defer db.Close()
 
-	query := `SELECT id, name, url, title, description, content, excerpt, type, status, published_date, created_at, updated_at
+	query := `SELECT id, slug, title, description, content, excerpt, type, status, thumbnail_id, published_date, created_at, updated_at
 		FROM articles_unified ORDER BY created_at DESC LIMIT ? OFFSET ?`
 
 	rows, err := db.Query(query, limit, offset)
@@ -299,12 +303,16 @@ func (s *AdminServer) GetArticles(websiteID string, limit, offset int) ([]Articl
 	for rows.Next() {
 		var a Article
 		var publishedDate sql.NullTime
-		err := rows.Scan(&a.ID, &a.Name, &a.URL, &a.Title, &a.Description, &a.Content, &a.Excerpt, &a.Type, &a.Status, &publishedDate, &a.CreatedAt, &a.UpdatedAt)
+		var thumbnailID sql.NullInt64
+		err := rows.Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Content, &a.Excerpt, &a.Type, &a.Status, &thumbnailID, &publishedDate, &a.CreatedAt, &a.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
 		if publishedDate.Valid {
 			a.PublishedDate = publishedDate.Time
+		}
+		if thumbnailID.Valid {
+			a.ThumbnailID = int(thumbnailID.Int64)
 		}
 		articles = append(articles, a)
 	}
@@ -320,17 +328,21 @@ func (s *AdminServer) GetArticle(websiteID string, articleID int) (Article, erro
 	}
 	defer db.Close()
 
-	query := `SELECT id, name, url, title, description, content, excerpt, type, status, published_date, created_at, updated_at
+	query := `SELECT id, slug, title, description, content, excerpt, type, status, thumbnail_id, published_date, created_at, updated_at
 		FROM articles_unified WHERE id = ?`
 
 	var a Article
 	var publishedDate sql.NullTime
-	err = db.QueryRow(query, articleID).Scan(&a.ID, &a.Name, &a.URL, &a.Title, &a.Description, &a.Content, &a.Excerpt, &a.Type, &a.Status, &publishedDate, &a.CreatedAt, &a.UpdatedAt)
+	var thumbnailID sql.NullInt64
+	err = db.QueryRow(query, articleID).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Content, &a.Excerpt, &a.Type, &a.Status, &thumbnailID, &publishedDate, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return Article{}, err
 	}
 	if publishedDate.Valid {
 		a.PublishedDate = publishedDate.Time
+	}
+	if thumbnailID.Valid {
+		a.ThumbnailID = int(thumbnailID.Int64)
 	}
 
 	return a, nil
@@ -344,7 +356,7 @@ func (s *AdminServer) CreateArticle(websiteID string, a Article) (int64, error) 
 	}
 	defer db.Close()
 
-	query := `INSERT INTO articles_unified (name, url, title, description, content, excerpt, type, status, published_date)
+	query := `INSERT INTO articles_unified (slug, title, description, content, excerpt, type, status, thumbnail_id, published_date)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	var publishedDate interface{}
@@ -354,7 +366,14 @@ func (s *AdminServer) CreateArticle(websiteID string, a Article) (int64, error) 
 		publishedDate = a.PublishedDate
 	}
 
-	result, err := db.Exec(query, a.Name, a.URL, a.Title, a.Description, a.Content, a.Excerpt, a.Type, a.Status, publishedDate)
+	var thumbnailID interface{}
+	if a.ThumbnailID == 0 {
+		thumbnailID = nil
+	} else {
+		thumbnailID = a.ThumbnailID
+	}
+
+	result, err := db.Exec(query, a.Slug, a.Title, a.Description, a.Content, a.Excerpt, a.Type, a.Status, thumbnailID, publishedDate)
 	if err != nil {
 		return 0, err
 	}
@@ -370,7 +389,7 @@ func (s *AdminServer) UpdateArticle(websiteID string, a Article) error {
 	}
 	defer db.Close()
 
-	query := `UPDATE articles_unified SET name = ?, url = ?, title = ?, description = ?, content = ?, excerpt = ?, type = ?, status = ?, published_date = ?
+	query := `UPDATE articles_unified SET slug = ?, title = ?, description = ?, content = ?, excerpt = ?, type = ?, status = ?, thumbnail_id = ?, published_date = ?
 		WHERE id = ?`
 
 	var publishedDate interface{}
@@ -380,7 +399,14 @@ func (s *AdminServer) UpdateArticle(websiteID string, a Article) error {
 		publishedDate = a.PublishedDate
 	}
 
-	_, err = db.Exec(query, a.Name, a.URL, a.Title, a.Description, a.Content, a.Excerpt, a.Type, a.Status, publishedDate, a.ID)
+	var thumbnailID interface{}
+	if a.ThumbnailID == 0 {
+		thumbnailID = nil
+	} else {
+		thumbnailID = a.ThumbnailID
+	}
+
+	_, err = db.Exec(query, a.Slug, a.Title, a.Description, a.Content, a.Excerpt, a.Type, a.Status, thumbnailID, publishedDate, a.ID)
 	return err
 }
 
@@ -597,7 +623,7 @@ func (s *AdminServer) GetCollections(websiteID string) ([]Collection, error) {
 	return collections, nil
 }
 
-// CreateCollection creates a new collection
+// CreateCollection creates a new collection at the top and pushes others down
 func (s *AdminServer) CreateCollection(websiteID string, c Collection) (int64, error) {
 	db, err := s.GetWebsiteConnection(websiteID)
 	if err != nil {
@@ -605,18 +631,78 @@ func (s *AdminServer) CreateCollection(websiteID string, c Collection) (int64, e
 	}
 	defer db.Close()
 
-	query := `INSERT INTO collections_unified (name, slug, description, image_id, sort_order, status)
-		VALUES (?, ?, ?, ?, ?, ?)`
-
-	result, err := db.Exec(query, c.Name, c.Slug, c.Description, c.ImageID, c.SortOrder, c.Status)
+	// Start transaction
+	tx, err := db.Begin()
 	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	// Increment all existing collections' sort_order by 1
+	_, err = tx.Exec(`UPDATE collections_unified SET sort_order = sort_order + 1`)
+	if err != nil {
+		return 0, err
+	}
+
+	// Insert new collection with sort_order = 0 (top position)
+	query := `INSERT INTO collections_unified (name, slug, description, image_id, sort_order, status)
+		VALUES (?, ?, ?, ?, 0, ?)`
+
+	result, err := tx.Exec(query, c.Name, c.Slug, c.Description, c.ImageID, c.Status)
+	if err != nil {
+		return 0, err
+	}
+
+	if err = tx.Commit(); err != nil {
 		return 0, err
 	}
 
 	return result.LastInsertId()
 }
 
-// DeleteCollection deletes a collection
+// GetCollection retrieves a single collection by ID
+func (s *AdminServer) GetCollection(websiteID string, collectionID int) (Collection, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return Collection{}, err
+	}
+	defer db.Close()
+
+	query := `SELECT id, name, slug, description, image_id, sort_order, status, created_at, updated_at
+		FROM collections_unified WHERE id = ?`
+
+	var c Collection
+	var imageID sql.NullInt64
+	err = db.QueryRow(query, collectionID).Scan(
+		&c.ID, &c.Name, &c.Slug, &c.Description, &imageID, &c.SortOrder, &c.Status, &c.CreatedAt, &c.UpdatedAt,
+	)
+	if err != nil {
+		return Collection{}, err
+	}
+
+	if imageID.Valid {
+		c.ImageID = int(imageID.Int64)
+	}
+
+	return c, nil
+}
+
+// UpdateCollection updates an existing collection
+func (s *AdminServer) UpdateCollection(websiteID string, c Collection) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	query := `UPDATE collections_unified SET name = ?, slug = ?, description = ?, image_id = ?, sort_order = ?, status = ?
+		WHERE id = ?`
+
+	_, err = db.Exec(query, c.Name, c.Slug, c.Description, c.ImageID, c.SortOrder, c.Status, c.ID)
+	return err
+}
+
+// DeleteCollection deletes a collection and renumbers the remaining ones
 func (s *AdminServer) DeleteCollection(websiteID string, collectionID int) error {
 	db, err := s.GetWebsiteConnection(websiteID)
 	if err != nil {
@@ -624,9 +710,100 @@ func (s *AdminServer) DeleteCollection(websiteID string, collectionID int) error
 	}
 	defer db.Close()
 
-	query := `DELETE FROM collections_unified WHERE id = ?`
-	_, err = db.Exec(query, collectionID)
-	return err
+	// Start transaction
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Delete the collection
+	_, err = tx.Exec(`DELETE FROM collections_unified WHERE id = ?`, collectionID)
+	if err != nil {
+		return err
+	}
+
+	// Renumber all collections sequentially starting from 0
+	// Get all collections ordered by current sort_order
+	rows, err := tx.Query(`SELECT id FROM collections_unified ORDER BY sort_order, name`)
+	if err != nil {
+		return err
+	}
+
+	var collectionIDs []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		collectionIDs = append(collectionIDs, id)
+	}
+	rows.Close()
+
+	// Update each collection with sequential sort_order
+	for i, id := range collectionIDs {
+		_, err = tx.Exec(`UPDATE collections_unified SET sort_order = ? WHERE id = ?`, i, id)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// ReorderCollection moves a collection up or down in sort order
+func (s *AdminServer) ReorderCollection(websiteID string, collectionID int, direction string) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	// Get current collection's sort_order
+	var currentSortOrder int
+	err = db.QueryRow(`SELECT sort_order FROM collections_unified WHERE id = ?`, collectionID).Scan(&currentSortOrder)
+	if err != nil {
+		return err
+	}
+
+	var targetSortOrder int
+	var targetID int
+	if direction == "up" {
+		// Find the collection with the next lower sort_order
+		err = db.QueryRow(`SELECT id, sort_order FROM collections_unified WHERE sort_order < ? ORDER BY sort_order DESC LIMIT 1`, currentSortOrder).Scan(&targetID, &targetSortOrder)
+	} else if direction == "down" {
+		// Find the collection with the next higher sort_order
+		err = db.QueryRow(`SELECT id, sort_order FROM collections_unified WHERE sort_order > ? ORDER BY sort_order ASC LIMIT 1`, currentSortOrder).Scan(&targetID, &targetSortOrder)
+	}
+
+	if err == sql.ErrNoRows {
+		// Already at top/bottom, nothing to do - just return success
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	// Swap sort_order values
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Swap the two collections' sort_order values
+	_, err = tx.Exec(`UPDATE collections_unified SET sort_order = ? WHERE id = ?`, targetSortOrder, collectionID)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`UPDATE collections_unified SET sort_order = ? WHERE id = ?`, currentSortOrder, targetID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // GetImages retrieves images for a specific website
@@ -637,7 +814,7 @@ func (s *AdminServer) GetImages(websiteID string, limit, offset int) ([]Image, e
 	}
 	defer db.Close()
 
-	query := `SELECT id, url, alt_text, width, height, created_at
+	query := `SELECT id, url, alt_text, credit, filename, size, width, height, created_at
 		FROM images_unified ORDER BY created_at DESC LIMIT ? OFFSET ?`
 
 	rows, err := db.Query(query, limit, offset)
@@ -649,9 +826,30 @@ func (s *AdminServer) GetImages(websiteID string, limit, offset int) ([]Image, e
 	images := []Image{}
 	for rows.Next() {
 		var img Image
-		err := rows.Scan(&img.ID, &img.URL, &img.AltText, &img.Width, &img.Height, &img.CreatedAt)
+		var filename, altText, credit sql.NullString
+		var size sql.NullInt64
+		var width, height sql.NullInt64
+		err := rows.Scan(&img.ID, &img.URL, &altText, &credit, &filename, &size, &width, &height, &img.CreatedAt)
 		if err != nil {
 			return nil, err
+		}
+		if altText.Valid {
+			img.AltText = altText.String
+		}
+		if credit.Valid {
+			img.Credit = credit.String
+		}
+		if filename.Valid {
+			img.Filename = filename.String
+		}
+		if size.Valid {
+			img.Size = size.Int64
+		}
+		if width.Valid {
+			img.Width = int(width.Int64)
+		}
+		if height.Valid {
+			img.Height = int(height.Int64)
 		}
 		images = append(images, img)
 	}
@@ -667,8 +865,8 @@ func (s *AdminServer) CreateImage(websiteID string, img Image) (int64, error) {
 	}
 	defer db.Close()
 
-	query := `INSERT INTO images_unified (url, alt_text, width, height) VALUES (?, ?, ?, ?)`
-	result, err := db.Exec(query, img.URL, img.AltText, img.Width, img.Height)
+	query := `INSERT INTO images_unified (url, alt_text, credit, filename, size, width, height) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	result, err := db.Exec(query, img.URL, img.AltText, img.Credit, img.Filename, img.Size, img.Width, img.Height)
 	if err != nil {
 		return 0, err
 	}
@@ -694,6 +892,112 @@ func (s *AdminServer) LogActivity(action, entityType string, entityID int, websi
 	// Just log to stdout for now - could write to a file later if needed
 	fmt.Printf("[ADMIN] %s %s (ID: %d, Website: %s)\n", action, entityType, entityID, websiteID)
 	return nil
+}
+
+// ====================
+// Product Images
+// ====================
+
+// ProductImage represents the product-image relationship
+type ProductImage struct {
+	ID       int    `json:"id"`
+	ImageID  int    `json:"imageId"`
+	Position int    `json:"position"`
+	Image    Image  `json:"image"`
+}
+
+// GetProductImages retrieves all images for a product
+func (s *AdminServer) GetProductImages(websiteID string, productID int) ([]ProductImage, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT pi.id, pi.image_id, pi.position,
+		       i.id, i.url, i.alt_text, i.credit, i.filename, i.size
+		FROM product_images pi
+		JOIN images_unified i ON pi.image_id = i.id
+		WHERE pi.product_id = ?
+		ORDER BY pi.position ASC
+	`
+
+	rows, err := db.Query(query, productID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var images []ProductImage
+	for rows.Next() {
+		var pi ProductImage
+		var altText, credit, filename sql.NullString
+		var size sql.NullInt64
+		err := rows.Scan(&pi.ID, &pi.ImageID, &pi.Position,
+			&pi.Image.ID, &pi.Image.URL, &altText, &credit, &filename, &size)
+		if err != nil {
+			return nil, err
+		}
+		if altText.Valid {
+			pi.Image.AltText = altText.String
+		}
+		if credit.Valid {
+			pi.Image.Credit = credit.String
+		}
+		if filename.Valid {
+			pi.Image.Filename = filename.String
+		}
+		if size.Valid {
+			pi.Image.Size = size.Int64
+		}
+		images = append(images, pi)
+	}
+
+	return images, nil
+}
+
+// AddProductImage adds an image to a product
+func (s *AdminServer) AddProductImage(websiteID string, productID, imageID, position int) (int64, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	query := `INSERT INTO product_images (product_id, image_id, position) VALUES (?, ?, ?)`
+	result, err := db.Exec(query, productID, imageID, position)
+	if err != nil {
+		return 0, err
+	}
+
+	return result.LastInsertId()
+}
+
+// RemoveProductImage removes an image from a product
+func (s *AdminServer) RemoveProductImage(websiteID string, productImageID int) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	query := `DELETE FROM product_images WHERE id = ?`
+	_, err = db.Exec(query, productImageID)
+	return err
+}
+
+// ClearProductImages removes all images from a product
+func (s *AdminServer) ClearProductImages(websiteID string, productID int) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	query := `DELETE FROM product_images WHERE product_id = ?`
+	_, err = db.Exec(query, productID)
+	return err
 }
 
 // ====================
@@ -818,6 +1122,24 @@ func (s *AdminServer) SetArticleCategories(websiteID string, articleID int, cate
 	}
 	defer db.Close()
 
+	// Get old category IDs before we delete them
+	oldCategoryIDsQuery := "SELECT category_id FROM article_categories WHERE post_id = ?"
+	rows, err := db.Query(oldCategoryIDsQuery, articleID)
+	if err != nil {
+		return err
+	}
+
+	var oldCategoryIDs []int
+	for rows.Next() {
+		var catID int
+		if err := rows.Scan(&catID); err != nil {
+			rows.Close()
+			return err
+		}
+		oldCategoryIDs = append(oldCategoryIDs, catID)
+	}
+	rows.Close()
+
 	// Start transaction
 	tx, err := db.Begin()
 	if err != nil {
@@ -845,5 +1167,49 @@ func (s *AdminServer) SetArticleCategories(websiteID string, articleID int, cate
 		}
 	}
 
-	return tx.Commit()
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	// Update counts for all affected categories (old and new)
+	affectedCategories := make(map[int]bool)
+	for _, id := range oldCategoryIDs {
+		affectedCategories[id] = true
+	}
+	for _, id := range categoryIDs {
+		affectedCategories[id] = true
+	}
+
+	// Update count for each affected category
+	for catID := range affectedCategories {
+		if err := s.UpdateCategoryCount(websiteID, catID); err != nil {
+			// Log the error but don't fail the whole operation
+			log.Printf("Error updating category count for category %d: %v", catID, err)
+		}
+	}
+
+	return nil
+}
+
+
+// UpdateCategoryCount recalculates the post count for a category
+func (s *AdminServer) UpdateCategoryCount(websiteID string, categoryID int) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	query := `
+		UPDATE categories_unified
+		SET count = (
+			SELECT COUNT(*)
+			FROM article_categories
+			WHERE category_id = ?
+		)
+		WHERE id = ?
+	`
+	_, err = db.Exec(query, categoryID, categoryID)
+	return err
 }

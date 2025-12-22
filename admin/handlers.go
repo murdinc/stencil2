@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,26 @@ func (s *AdminServer) getWebsiteFromURL(r *http.Request) (Website, error) {
 		return Website{}, fmt.Errorf("website ID not in URL")
 	}
 	return s.GetWebsite(websiteID)
+}
+
+// validateSlug ensures slug is valid: no leading/trailing slashes, only lowercase alphanumeric and hyphens
+func validateSlug(slug string) error {
+	if slug == "" {
+		return fmt.Errorf("slug cannot be empty")
+	}
+	if strings.HasPrefix(slug, "/") || strings.HasSuffix(slug, "/") {
+		return fmt.Errorf("slug cannot start or end with a slash")
+	}
+	// Only allow lowercase letters, numbers, hyphens, and forward slashes (for nested paths)
+	validSlug := regexp.MustCompile(`^[a-z0-9\-/]+$`)
+	if !validSlug.MatchString(slug) {
+		return fmt.Errorf("slug can only contain lowercase letters, numbers, hyphens, and forward slashes")
+	}
+	// Don't allow double slashes
+	if strings.Contains(slug, "//") {
+		return fmt.Errorf("slug cannot contain consecutive slashes")
+	}
+	return nil
 }
 
 // handleLoginPage renders the login page
@@ -64,6 +85,16 @@ func (s *AdminServer) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 // handleDashboard renders the main dashboard (no site selected)
 func (s *AdminServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	// Check if user has a last selected site in cookie
+	if cookie, err := r.Cookie("last_site"); err == nil && cookie.Value != "" {
+		// Verify the site still exists
+		if _, err := s.GetWebsite(cookie.Value); err == nil {
+			// Redirect to the last selected site
+			http.Redirect(w, r, "/site/"+cookie.Value, http.StatusFound)
+			return
+		}
+	}
+
 	s.renderWithLayout(w, r, "dashboard_content.html", map[string]interface{}{
 		"Title":         "Dashboard",
 		"ActiveSection": "",
@@ -83,6 +114,16 @@ func (s *AdminServer) handleSiteDashboard(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Site not found", http.StatusNotFound)
 		return
 	}
+
+	// Store this site as the last selected site in a cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "last_site",
+		Value:    websiteID,
+		Path:     "/",
+		MaxAge:   60 * 60 * 24 * 30, // 30 days
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 
 	s.renderWithLayout(w, r, "site_dashboard_content.html", map[string]interface{}{
 		"Title":         site.SiteName + " - Dashboard",
@@ -304,9 +345,16 @@ func (s *AdminServer) handleArticleCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	slug := r.FormValue("slug")
+
+	// Validate slug
+	if err := validateSlug(slug); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid slug: %v", err), http.StatusBadRequest)
+		return
+	}
+
 	article := Article{
-		Name:        r.FormValue("name"),
-		URL:         r.FormValue("url"),
+		Slug:        slug,
 		Title:       r.FormValue("title"),
 		Description: r.FormValue("description"),
 		Content:     r.FormValue("content"),
@@ -328,19 +376,58 @@ func (s *AdminServer) handleArticleCreate(w http.ResponseWriter, r *http.Request
 		article.PublishedDate = time.Now()
 	}
 
+	// Handle image upload or selection
+	// Check if user uploaded a new image
+	if file, header, err := r.FormFile("new_image"); err == nil {
+		defer file.Close()
+
+		// Get website info
+		website, err := s.GetWebsite(websiteID)
+		if err == nil {
+			// Create uploads directory if it doesn't exist
+			uploadsDir := filepath.Join("websites", website.Directory, "public", "uploads")
+			os.MkdirAll(uploadsDir, 0755)
+
+			// Generate unique filename
+			ext := filepath.Ext(header.Filename)
+			filename := fmt.Sprintf("%d_%s%s", time.Now().Unix(), strings.ReplaceAll(header.Filename[:len(header.Filename)-len(ext)], " ", "_"), ext)
+			filePath := filepath.Join(uploadsDir, filename)
+
+			// Save file
+			if dst, err := os.Create(filePath); err == nil {
+				defer dst.Close()
+				dst.ReadFrom(file)
+				fileInfo, _ := dst.Stat()
+
+				// Create image record with protocol-relative URL
+				imageURL := fmt.Sprintf("//%s/public/uploads/%s", website.HTTPAddress, filename)
+				image := Image{
+					URL:      imageURL,
+					AltText:  r.FormValue("image_alt"),
+					Credit:   r.FormValue("image_credit"),
+					Filename: header.Filename,
+					Size:     fileInfo.Size(),
+				}
+
+				if imageID, err := s.CreateImage(websiteID, image); err == nil {
+					article.ThumbnailID = int(imageID)
+				}
+			}
+		}
+	} else {
+		// User selected an existing image
+		imageIDStr := r.FormValue("image_id")
+		if imageIDStr != "" {
+			if imageID, err := strconv.Atoi(imageIDStr); err == nil {
+				article.ThumbnailID = imageID
+			}
+		}
+	}
+
 	id, err := s.CreateArticle(websiteID, article)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error creating article: %v", err), http.StatusInternalServerError)
 		return
-	}
-
-	// Handle image upload or selection
-	// TODO: Implement actual file upload logic here
-	imageIDStr := r.FormValue("image_id")
-	if imageIDStr != "" {
-		// User selected an existing image
-		// TODO: Associate image with article
-		log.Printf("Selected image ID: %s for article %d", imageIDStr, id)
 	}
 
 	// Save category relationships
@@ -439,10 +526,17 @@ func (s *AdminServer) handleArticleUpdate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	slug := r.FormValue("slug")
+
+	// Validate slug
+	if err := validateSlug(slug); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid slug: %v", err), http.StatusBadRequest)
+		return
+	}
+
 	article := Article{
 		ID:            articleID,
-		Name:          r.FormValue("name"),
-		URL:           r.FormValue("url"),
+		Slug:          slug,
 		Title:         r.FormValue("title"),
 		Description:   r.FormValue("description"),
 		Content:       r.FormValue("content"),
@@ -450,6 +544,7 @@ func (s *AdminServer) handleArticleUpdate(w http.ResponseWriter, r *http.Request
 		Type:          r.FormValue("type"),
 		Status:        r.FormValue("status"),
 		PublishedDate: existingArticle.PublishedDate,
+		ThumbnailID:   existingArticle.ThumbnailID,
 	}
 
 	// Parse published_date from form if provided
@@ -465,18 +560,60 @@ func (s *AdminServer) handleArticleUpdate(w http.ResponseWriter, r *http.Request
 		article.PublishedDate = time.Now()
 	}
 
+	// Handle image upload or selection
+	// Check if user uploaded a new image
+	if file, header, err := r.FormFile("new_image"); err == nil {
+		defer file.Close()
+
+		// Get website info
+		website, err := s.GetWebsite(websiteID)
+		if err == nil {
+			// Create uploads directory if it doesn't exist
+			uploadsDir := filepath.Join("websites", website.Directory, "public", "uploads")
+			os.MkdirAll(uploadsDir, 0755)
+
+			// Generate unique filename
+			ext := filepath.Ext(header.Filename)
+			filename := fmt.Sprintf("%d_%s%s", time.Now().Unix(), strings.ReplaceAll(header.Filename[:len(header.Filename)-len(ext)], " ", "_"), ext)
+			filePath := filepath.Join(uploadsDir, filename)
+
+			// Save file
+			if dst, err := os.Create(filePath); err == nil {
+				defer dst.Close()
+				dst.ReadFrom(file)
+				fileInfo, _ := dst.Stat()
+
+				// Create image record with protocol-relative URL
+				imageURL := fmt.Sprintf("//%s/public/uploads/%s", website.HTTPAddress, filename)
+				image := Image{
+					URL:      imageURL,
+					AltText:  r.FormValue("image_alt"),
+					Credit:   r.FormValue("image_credit"),
+					Filename: header.Filename,
+					Size:     fileInfo.Size(),
+				}
+
+				if imageID, err := s.CreateImage(websiteID, image); err == nil {
+					article.ThumbnailID = int(imageID)
+				}
+			}
+		}
+	} else {
+		// User selected an existing image
+		imageIDStr := r.FormValue("image_id")
+		if imageIDStr != "" {
+			if imageID, err := strconv.Atoi(imageIDStr); err == nil {
+				article.ThumbnailID = imageID
+			}
+		} else {
+			// No image selected, clear the thumbnail
+			article.ThumbnailID = 0
+		}
+	}
+
 	if err := s.UpdateArticle(websiteID, article); err != nil {
 		http.Error(w, fmt.Sprintf("Error updating article: %v", err), http.StatusInternalServerError)
 		return
-	}
-
-	// Handle image upload or selection
-	// TODO: Implement actual file upload logic here
-	imageIDStr := r.FormValue("image_id")
-	if imageIDStr != "" {
-		// User selected an existing image
-		// TODO: Associate image with article
-		log.Printf("Selected image ID: %s for article %d", imageIDStr, articleID)
 	}
 
 	// Save category relationships
@@ -556,12 +693,20 @@ func (s *AdminServer) handleProductNew(w http.ResponseWriter, r *http.Request) {
 		collections = []Collection{}
 	}
 
+	// Load all images
+	images, err := s.GetImages(websiteID, 1000, 0)
+	if err != nil {
+		log.Printf("Error loading images: %v", err)
+		images = []Image{}
+	}
+
 	s.renderWithLayout(w, r, "product_form_content.html", map[string]interface{}{
 		"Title":         website.SiteName + " - New Product",
 		"ActiveSection": "products",
 		"FormTitle":     "Create New Product",
 		"Website":       website,
 		"Collections":   collections,
+		"Images":        images,
 		"Action":        fmt.Sprintf("/site/%s/products/new", websiteID),
 	})
 }
@@ -569,7 +714,7 @@ func (s *AdminServer) handleProductNew(w http.ResponseWriter, r *http.Request) {
 func (s *AdminServer) handleProductCreate(w http.ResponseWriter, r *http.Request) {
 	websiteID := chi.URLParam(r, "id")
 
-	if err := r.ParseForm(); err != nil {
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		return
 	}
@@ -603,6 +748,8 @@ func (s *AdminServer) handleProductCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	productID := int(id)
+
 	// Save collection relationships
 	collectionIDStrs := r.Form["collections[]"]
 	var collectionIDs []int
@@ -612,12 +759,73 @@ func (s *AdminServer) handleProductCreate(w http.ResponseWriter, r *http.Request
 		}
 	}
 	if len(collectionIDs) > 0 {
-		if err := s.SetProductCollections(websiteID, int(id), collectionIDs); err != nil {
+		if err := s.SetProductCollections(websiteID, productID, collectionIDs); err != nil {
 			log.Printf("Error setting product collections: %v", err)
 		}
 	}
 
-	s.LogActivity("create", "product", int(id), websiteID, product)
+	// Handle product images
+	position := 0
+
+	// Add existing images
+	existingImageIDStrs := r.Form["existing_images[]"]
+	for _, idStr := range existingImageIDStrs {
+		if imageID, err := strconv.Atoi(idStr); err == nil {
+			s.AddProductImage(websiteID, productID, imageID, position)
+			position++
+		}
+	}
+
+	// Upload and add new images
+	website, _ := s.GetWebsite(websiteID)
+	if website.ID != "" {
+		files := r.MultipartForm.File["product_images"]
+		altText := r.FormValue("new_images_alt")
+		credit := r.FormValue("new_images_credit")
+
+		for _, fileHeader := range files {
+			file, err := fileHeader.Open()
+			if err != nil {
+				continue
+			}
+			defer file.Close()
+
+			// Create uploads directory
+			uploadsDir := filepath.Join("websites", website.Directory, "public", "uploads")
+			os.MkdirAll(uploadsDir, 0755)
+
+			// Generate unique filename
+			ext := filepath.Ext(fileHeader.Filename)
+			filename := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), strings.ReplaceAll(fileHeader.Filename[:len(fileHeader.Filename)-len(ext)], " ", "_"), ext)
+			filePath := filepath.Join(uploadsDir, filename)
+
+			// Save file
+			dst, err := os.Create(filePath)
+			if err != nil {
+				continue
+			}
+			dst.ReadFrom(file)
+			fileInfo, _ := dst.Stat()
+			dst.Close()
+
+			// Create image record
+			imageURL := fmt.Sprintf("//%s/public/uploads/%s", website.HTTPAddress, filename)
+			image := Image{
+				URL:      imageURL,
+				AltText:  altText,
+				Credit:   credit,
+				Filename: fileHeader.Filename,
+				Size:     fileInfo.Size(),
+			}
+
+			if imageID, err := s.CreateImage(websiteID, image); err == nil {
+				s.AddProductImage(websiteID, productID, int(imageID), position)
+				position++
+			}
+		}
+	}
+
+	s.LogActivity("create", "product", productID, websiteID, product)
 
 	http.Redirect(w, r, fmt.Sprintf("/site/%s/products", websiteID), http.StatusSeeOther)
 }
@@ -656,6 +864,20 @@ func (s *AdminServer) handleProductEdit(w http.ResponseWriter, r *http.Request) 
 		productCollections = []Collection{}
 	}
 
+	// Load all images
+	images, err := s.GetImages(websiteID, 1000, 0)
+	if err != nil {
+		log.Printf("Error loading images: %v", err)
+		images = []Image{}
+	}
+
+	// Load product images
+	productImages, err := s.GetProductImages(websiteID, productID)
+	if err != nil {
+		log.Printf("Error loading product images: %v", err)
+		productImages = []ProductImage{}
+	}
+
 	s.renderWithLayout(w, r, "product_form_content.html", map[string]interface{}{
 		"Title":              website.SiteName + " - Edit Product",
 		"ActiveSection":      "products",
@@ -664,6 +886,8 @@ func (s *AdminServer) handleProductEdit(w http.ResponseWriter, r *http.Request) 
 		"Product":            product,
 		"Collections":        collections,
 		"ProductCollections": productCollections,
+		"Images":             images,
+		"ProductImages":      productImages,
 		"Action":             fmt.Sprintf("/site/%s/products/%d/edit", websiteID, productID),
 	})
 }
@@ -677,7 +901,7 @@ func (s *AdminServer) handleProductUpdate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		return
 	}
@@ -730,6 +954,76 @@ func (s *AdminServer) handleProductUpdate(w http.ResponseWriter, r *http.Request
 	// Always update collections (empty array will clear all associations)
 	if err := s.SetProductCollections(websiteID, productID, collectionIDs); err != nil {
 		log.Printf("Error setting product collections: %v", err)
+	}
+
+	// Handle image removals
+	removeImageIDStrs := r.Form["remove_images[]"]
+	for _, idStr := range removeImageIDStrs {
+		if piID, err := strconv.Atoi(idStr); err == nil {
+			s.RemoveProductImage(websiteID, piID)
+		}
+	}
+
+	// Get current max position
+	currentImages, _ := s.GetProductImages(websiteID, productID)
+	position := len(currentImages)
+
+	// Add existing images
+	existingImageIDStrs := r.Form["existing_images[]"]
+	for _, idStr := range existingImageIDStrs {
+		if imageID, err := strconv.Atoi(idStr); err == nil {
+			s.AddProductImage(websiteID, productID, imageID, position)
+			position++
+		}
+	}
+
+	// Upload and add new images
+	website, _ := s.GetWebsite(websiteID)
+	if website.ID != "" {
+		files := r.MultipartForm.File["product_images"]
+		altText := r.FormValue("new_images_alt")
+		credit := r.FormValue("new_images_credit")
+
+		for _, fileHeader := range files {
+			file, err := fileHeader.Open()
+			if err != nil {
+				continue
+			}
+			defer file.Close()
+
+			// Create uploads directory
+			uploadsDir := filepath.Join("websites", website.Directory, "public", "uploads")
+			os.MkdirAll(uploadsDir, 0755)
+
+			// Generate unique filename
+			ext := filepath.Ext(fileHeader.Filename)
+			filename := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), strings.ReplaceAll(fileHeader.Filename[:len(fileHeader.Filename)-len(ext)], " ", "_"), ext)
+			filePath := filepath.Join(uploadsDir, filename)
+
+			// Save file
+			dst, err := os.Create(filePath)
+			if err != nil {
+				continue
+			}
+			dst.ReadFrom(file)
+			fileInfo, _ := dst.Stat()
+			dst.Close()
+
+			// Create image record
+			imageURL := fmt.Sprintf("//%s/public/uploads/%s", website.HTTPAddress, filename)
+			image := Image{
+				URL:      imageURL,
+				AltText:  altText,
+				Credit:   credit,
+				Filename: fileHeader.Filename,
+				Size:     fileInfo.Size(),
+			}
+
+			if imageID, err := s.CreateImage(websiteID, image); err == nil {
+				s.AddProductImage(websiteID, productID, int(imageID), position)
+				position++
+			}
+		}
 	}
 
 	s.LogActivity("update", "product", productID, websiteID, product)
@@ -890,6 +1184,168 @@ func (s *AdminServer) handleCollectionDelete(w http.ResponseWriter, r *http.Requ
 	http.Redirect(w, r, fmt.Sprintf("/site/%s/collections", websiteID), http.StatusSeeOther)
 }
 
+func (s *AdminServer) handleCollectionEditForm(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	collectionID, err := strconv.Atoi(chi.URLParam(r, "collectionId"))
+	if err != nil {
+		http.Error(w, "Invalid collection ID", http.StatusBadRequest)
+		return
+	}
+
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, "Website not found", http.StatusNotFound)
+		return
+	}
+
+	collection, err := s.GetCollection(websiteID, collectionID)
+	if err != nil {
+		http.Error(w, "Collection not found", http.StatusNotFound)
+		return
+	}
+
+	// Load all images
+	images, err := s.GetImages(websiteID, 1000, 0)
+	if err != nil {
+		log.Printf("Error loading images: %v", err)
+		images = []Image{}
+	}
+
+	// Load collection's current image if it has one
+	var collectionImage *Image
+	if collection.ImageID > 0 {
+		for _, img := range images {
+			if img.ID == collection.ImageID {
+				collectionImage = &img
+				break
+			}
+		}
+	}
+
+	s.renderWithLayout(w, r, "collection_form_content.html", map[string]interface{}{
+		"Title":           "Edit Collection",
+		"ActiveSection":   "collections",
+		"Website":         website,
+		"Collection":      collection,
+		"Images":          images,
+		"CollectionImage": collectionImage,
+		"Action":          fmt.Sprintf("/site/%s/collections/%d/edit", websiteID, collectionID),
+	})
+}
+
+func (s *AdminServer) handleCollectionUpdate(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	collectionID, err := strconv.Atoi(chi.URLParam(r, "collectionId"))
+	if err != nil {
+		http.Error(w, "Invalid collection ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	// Get existing collection
+	existingCollection, _ := s.GetCollection(websiteID, collectionID)
+
+	sortOrder, _ := strconv.Atoi(r.FormValue("sortOrder"))
+
+	collection := Collection{
+		ID:          collectionID,
+		Name:        r.FormValue("name"),
+		Slug:        r.FormValue("slug"),
+		Description: r.FormValue("description"),
+		SortOrder:   sortOrder,
+		Status:      r.FormValue("status"),
+		ImageID:     existingCollection.ImageID,
+	}
+
+	// Handle image upload or selection
+	if file, header, err := r.FormFile("new_image"); err == nil {
+		defer file.Close()
+
+		// Get website info
+		website, _ := s.GetWebsite(websiteID)
+		if website.ID != "" {
+			// Create uploads directory
+			uploadsDir := filepath.Join("websites", website.Directory, "public", "uploads")
+			os.MkdirAll(uploadsDir, 0755)
+
+			// Generate unique filename
+			ext := filepath.Ext(header.Filename)
+			filename := fmt.Sprintf("%d_%s%s", time.Now().Unix(), strings.ReplaceAll(header.Filename[:len(header.Filename)-len(ext)], " ", "_"), ext)
+			filePath := filepath.Join(uploadsDir, filename)
+
+			// Save file
+			dst, err := os.Create(filePath)
+			if err == nil {
+				defer dst.Close()
+				dst.ReadFrom(file)
+				fileInfo, _ := dst.Stat()
+
+				// Create image record
+				imageURL := fmt.Sprintf("//%s/public/uploads/%s", website.HTTPAddress, filename)
+				image := Image{
+					URL:      imageURL,
+					AltText:  r.FormValue("image_alt"),
+					Credit:   r.FormValue("image_credit"),
+					Filename: header.Filename,
+					Size:     fileInfo.Size(),
+				}
+
+				if imageID, err := s.CreateImage(websiteID, image); err == nil {
+					collection.ImageID = int(imageID)
+				}
+			}
+		}
+	} else {
+		// User selected an existing image or cleared it
+		imageIDStr := r.FormValue("image_id")
+		if imageIDStr != "" {
+			if imageID, err := strconv.Atoi(imageIDStr); err == nil {
+				collection.ImageID = imageID
+			}
+		} else {
+			// No image selected, clear it
+			collection.ImageID = 0
+		}
+	}
+
+	if err := s.UpdateCollection(websiteID, collection); err != nil {
+		http.Error(w, fmt.Sprintf("Error updating collection: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.LogActivity("update", "collection", collectionID, websiteID, collection)
+
+	http.Redirect(w, r, fmt.Sprintf("/site/%s/collections", websiteID), http.StatusSeeOther)
+}
+
+func (s *AdminServer) handleCollectionReorder(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	collectionID, err := strconv.Atoi(chi.URLParam(r, "collectionId"))
+	if err != nil {
+		http.Error(w, "Invalid collection ID", http.StatusBadRequest)
+		return
+	}
+
+	direction := chi.URLParam(r, "direction")
+	if direction != "up" && direction != "down" {
+		http.Error(w, "Invalid direction", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.ReorderCollection(websiteID, collectionID, direction); err != nil {
+		http.Error(w, fmt.Sprintf("Error reordering collection: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.LogActivity("reorder", "collection", collectionID, websiteID, map[string]string{"direction": direction})
+
+	http.Redirect(w, r, fmt.Sprintf("/site/%s/collections", websiteID), http.StatusSeeOther)
+}
+
 // Image handlers (basic list and upload/delete)
 func (s *AdminServer) handleImagesList(w http.ResponseWriter, r *http.Request) {
 	websiteID := chi.URLParam(r, "id")
@@ -917,15 +1373,64 @@ func (s *AdminServer) handleImagesList(w http.ResponseWriter, r *http.Request) {
 func (s *AdminServer) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 	websiteID := chi.URLParam(r, "id")
 
-	if err := r.ParseForm(); err != nil {
+	// Parse multipart form for file uploads (32 MB max)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		return
 	}
 
-	// For now, just store the URL - in a real implementation, you'd handle file uploads
+	// Get the uploaded file
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		http.Error(w, "No image file uploaded", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// Get website info to find the directory
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, "Website not found", http.StatusNotFound)
+		return
+	}
+
+	// Create uploads directory if it doesn't exist
+	uploadsDir := filepath.Join("websites", website.Directory, "public", "uploads")
+	if err := os.MkdirAll(uploadsDir, 0755); err != nil {
+		http.Error(w, fmt.Sprintf("Error creating uploads directory: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Generate unique filename with timestamp
+	ext := filepath.Ext(header.Filename)
+	filename := fmt.Sprintf("%d_%s%s", time.Now().Unix(), strings.ReplaceAll(header.Filename[:len(header.Filename)-len(ext)], " ", "_"), ext)
+	filePath := filepath.Join(uploadsDir, filename)
+
+	// Create the file on disk
+	dst, err := os.Create(filePath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error creating file: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer dst.Close()
+
+	// Copy uploaded file to destination
+	if _, err := dst.ReadFrom(file); err != nil {
+		http.Error(w, fmt.Sprintf("Error saving file: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Get file size
+	fileInfo, _ := dst.Stat()
+
+	// Create image record in database with protocol-relative URL
+	imageURL := fmt.Sprintf("//%s/public/uploads/%s", website.HTTPAddress, filename)
 	image := Image{
-		URL:     r.FormValue("url"),
-		AltText: r.FormValue("altText"),
+		URL:      imageURL,
+		AltText:  r.FormValue("alt"),
+		Credit:   r.FormValue("credit"),
+		Filename: header.Filename,
+		Size:     fileInfo.Size(),
 	}
 
 	id, err := s.CreateImage(websiteID, image)

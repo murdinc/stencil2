@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -8,6 +9,21 @@ import (
 
 	"github.com/go-chi/chi/v5"
 )
+
+// Template functions
+var templateFuncs = template.FuncMap{
+	"formatBytes": func(bytes int64) string {
+		if bytes == 0 {
+			return "—"
+		}
+		kb := float64(bytes) / 1024.0
+		if kb < 1024 {
+			return fmt.Sprintf("%.1f KB", kb)
+		}
+		mb := kb / 1024.0
+		return fmt.Sprintf("%.1f MB", mb)
+	},
+}
 
 // LayoutData holds common data for all pages
 type LayoutData struct {
@@ -57,8 +73,8 @@ func (s *AdminServer) renderWithLayout(w http.ResponseWriter, r *http.Request, c
 		finalData[k] = v
 	}
 
-	// Parse templates
-	tmpl, err := template.ParseFiles(
+	// Parse templates with custom functions
+	tmpl, err := template.New("layout.html").Funcs(templateFuncs).ParseFiles(
 		filepath.Join("admin", "templates", "layout.html"),
 		filepath.Join("admin", "templates", contentTemplate),
 	)
