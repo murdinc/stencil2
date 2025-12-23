@@ -77,6 +77,7 @@ func (s *AdminServer) setupRoutes() {
 		r.Get("/site/{id}/products/{productId}/edit", s.handleProductEdit)
 		r.Post("/site/{id}/products/{productId}/edit", s.handleProductUpdate)
 		r.Post("/site/{id}/products/{productId}/delete", s.handleProductDelete)
+		r.Post("/site/{id}/products/{productId}/reorder/{direction}", s.handleProductReorder)
 
 		// Category management
 		r.Get("/site/{id}/categories", s.handleCategoriesList)
@@ -95,6 +96,11 @@ func (s *AdminServer) setupRoutes() {
 		r.Get("/site/{id}/images", s.handleImagesList)
 		r.Post("/site/{id}/images/upload", s.handleImageUpload)
 		r.Post("/site/{id}/images/{imageId}/delete", s.handleImageDelete)
+
+		// Order management
+		r.Get("/site/{id}/orders", s.handleOrdersList)
+		r.Get("/site/{id}/orders/{orderId}", s.handleOrderDetail)
+		r.Post("/site/{id}/orders/{orderId}/fulfillment", s.handleOrderFulfillmentUpdate)
 	})
 
 	// Static assets for admin UI

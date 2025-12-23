@@ -6,18 +6,22 @@
     <title>{{.Title}} - stencil</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: #f5f7fa; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e8eef5 100%);
+            min-height: 100vh;
+        }
 
         /* Top Header */
         .header {
-            background: #2c3e50;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             padding: 0 20px;
             height: 60px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
             position: fixed;
             top: 0;
             left: 0;
@@ -25,26 +29,43 @@
             z-index: 100;
         }
         .header-left { display: flex; align-items: center; gap: 20px; }
-        .header h1 { font-size: 20px; font-weight: 600; }
+        .header h1 {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
         .site-selector {
-            background: #34495e;
+            background: rgba(255, 255, 255, 0.2);
             color: white;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 8px 14px;
+            border-radius: 8px;
             font-size: 14px;
             cursor: pointer;
             min-width: 200px;
+            transition: all 0.3s;
         }
-        .site-selector:hover { background: #3d566e; }
+        .site-selector:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
+        }
+        .site-selector option {
+            background: #764ba2;
+            color: white;
+        }
         .header-right a {
             color: white;
             text-decoration: none;
             padding: 8px 16px;
-            border-radius: 4px;
-            transition: background 0.2s;
+            border-radius: 8px;
+            transition: all 0.3s;
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
-        .header-right a:hover { background: rgba(255,255,255,0.1); }
+        .header-right a:hover {
+            background: rgba(255,255,255,0.2);
+            transform: translateY(-1px);
+        }
 
         /* Sidebar */
         .sidebar {
@@ -56,33 +77,39 @@
             bottom: 0;
             border-right: 1px solid #e1e8ed;
             overflow-y: auto;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.04);
         }
         .sidebar-section {
             padding: 20px 0;
-            border-bottom: 1px solid #e1e8ed;
+            border-bottom: 1px solid #f0f3f7;
         }
         .sidebar-section h3 {
             padding: 0 20px 10px;
-            font-size: 12px;
+            font-size: 11px;
             text-transform: uppercase;
-            color: #95a5a6;
+            color: #8b95a5;
             font-weight: 600;
+            letter-spacing: 0.5px;
         }
         .sidebar-link {
             display: block;
-            padding: 10px 20px;
-            color: #2c3e50;
+            padding: 11px 20px;
+            color: #4a5568;
             text-decoration: none;
             transition: all 0.2s;
+            border-left: 3px solid transparent;
+            font-weight: 500;
+            font-size: 14px;
         }
         .sidebar-link:hover {
-            background: #ecf0f1;
-            border-left: 3px solid #3498db;
+            background: #f7f9fc;
+            border-left: 3px solid #667eea;
+            color: #667eea;
         }
         .sidebar-link.active {
-            background: #e8f4f8;
-            border-left: 3px solid #3498db;
-            color: #3498db;
+            background: #f0f4ff;
+            border-left: 3px solid #667eea;
+            color: #667eea;
             font-weight: 600;
         }
 
@@ -95,14 +122,20 @@
         }
         .content-header {
             margin-bottom: 30px;
+            background: white;
+            padding: 24px;
+            border-radius: 8px;
+            border: 1px solid #e1e8ed;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
         .content-header h2 {
-            font-size: 28px;
-            color: #2c3e50;
-            margin-bottom: 8px;
+            font-size: 26px;
+            color: #1a202c;
+            margin-bottom: 6px;
+            font-weight: 600;
         }
         .content-header p {
-            color: #7f8c8d;
+            color: #718096;
             font-size: 14px;
         }
 
@@ -110,35 +143,66 @@
         .card {
             background: white;
             border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
             padding: 24px;
             margin-bottom: 20px;
+            border: 1px solid #e1e8ed;
         }
         .card h3 {
             font-size: 18px;
-            margin-bottom: 16px;
-            color: #2c3e50;
+            margin-bottom: 20px;
+            color: #333;
+            font-weight: 600;
         }
 
         /* Buttons */
         .btn {
             display: inline-block;
-            padding: 10px 20px;
-            background: #3498db;
+            padding: 9px 18px;
+            background: #667eea;
             color: white;
             text-decoration: none;
-            border-radius: 4px;
+            border-radius: 6px;
             border: none;
             cursor: pointer;
             font-size: 14px;
-            transition: background 0.2s;
+            font-weight: 500;
+            transition: all 0.2s;
+            margin-bottom: 16px;
+            margin-right: 8px;
         }
-        .btn:hover { background: #2980b9; }
-        .btn-success { background: #27ae60; }
-        .btn-success:hover { background: #229954; }
-        .btn-danger { background: #e74c3c; }
-        .btn-danger:hover { background: #c0392b; }
-        .btn-sm { padding: 6px 12px; font-size: 13px; }
+        .btn:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.25);
+        }
+        .btn-success {
+            background: #48bb78;
+        }
+        .btn-success:hover {
+            background: #38a169;
+            box-shadow: 0 2px 8px rgba(72, 187, 120, 0.25);
+        }
+        .btn-danger {
+            background: #f56565;
+        }
+        .btn-danger:hover {
+            background: #e53e3e;
+            box-shadow: 0 2px 8px rgba(245, 101, 101, 0.25);
+        }
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+
+        /* Button spacing in tables */
+        td .btn {
+            margin-bottom: 0;
+            margin-right: 6px;
+        }
+        td .btn:last-child {
+            margin-right: 0;
+        }
 
         /* Tables */
         table {
@@ -149,39 +213,48 @@
         th, td {
             padding: 12px;
             text-align: left;
-            border-bottom: 1px solid #ecf0f1;
+            border-bottom: 1px solid #e1e8ed;
         }
         th {
-            background: #f8f9fa;
+            background: #f7fafc;
             font-weight: 600;
-            color: #2c3e50;
-            font-size: 13px;
+            color: #4a5568;
+            font-size: 12px;
             text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
-        tr:hover { background: #f8f9fa; }
+        tr:hover {
+            background: #f7fafc;
+        }
+        tbody tr {
+            transition: background 0.15s;
+        }
 
         /* Forms */
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 24px;
         }
         .form-group label {
             display: block;
-            margin-bottom: 6px;
+            margin-bottom: 8px;
             font-weight: 600;
-            color: #2c3e50;
+            color: #555;
             font-size: 14px;
         }
         .form-group input[type="text"],
         .form-group input[type="email"],
         .form-group input[type="number"],
+        .form-group input[type="file"],
         .form-group textarea,
         .form-group select {
             width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
             font-size: 14px;
             font-family: inherit;
+            background: white;
+            transition: all 0.2s;
         }
         .form-group textarea {
             min-height: 120px;
@@ -191,19 +264,27 @@
         .form-group textarea:focus,
         .form-group select:focus {
             outline: none;
-            border-color: #3498db;
-            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
 
         /* Empty State */
         .empty-state {
             text-align: center;
             padding: 60px 20px;
-            color: #95a5a6;
+            color: #718096;
         }
         .empty-state h3 {
             font-size: 20px;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
+            color: #4a5568;
+        }
+        .empty-state p {
+            margin-bottom: 24px;
+            font-size: 15px;
+        }
+        .empty-state .btn {
+            margin-top: 8px;
         }
 
         /* No Site Selected */
@@ -269,6 +350,7 @@
             <h3>E-Commerce</h3>
             <a href="/site/{{.CurrentSite.ID}}/products" class="sidebar-link {{if eq .ActiveSection "products"}}active{{end}}">Products</a>
             <a href="/site/{{.CurrentSite.ID}}/collections" class="sidebar-link {{if eq .ActiveSection "collections"}}active{{end}}">Collections</a>
+            <a href="/site/{{.CurrentSite.ID}}/orders" class="sidebar-link {{if eq .ActiveSection "orders"}}active{{end}}">Orders</a>
         </div>
         <div class="sidebar-section">
             <h3>Settings</h3>

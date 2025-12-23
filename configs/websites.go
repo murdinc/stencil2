@@ -19,6 +19,19 @@ type WebsiteConfig struct {
 	HTTP          struct {
 		Address string `json:"address"`
 	} `json:"http"`
+	Stripe struct {
+		PublishableKey string `json:"publishableKey"`
+		SecretKey      string `json:"secretKey"`
+	} `json:"stripe"`
+	Email struct {
+		FromAddress string `json:"fromAddress"`
+		FromName    string `json:"fromName"`
+		ReplyTo     string `json:"replyTo"`
+	} `json:"email"`
+	Ecommerce struct {
+		TaxRate      float64 `json:"taxRate"`      // e.g., 0.08 for 8%
+		ShippingCost float64 `json:"shippingCost"` // flat rate shipping cost
+	} `json:"ecommerce"`
 	Directory string
 }
 

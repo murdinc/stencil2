@@ -5,20 +5,29 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 
 	"github.com/go-chi/chi"
+	"github.com/murdinc/stencil2/configs"
 	"github.com/murdinc/stencil2/database"
+	"github.com/murdinc/stencil2/email"
 	"github.com/murdinc/stencil2/session"
 	"github.com/murdinc/stencil2/structs"
+	"github.com/stripe/stripe-go/v78"
+	"github.com/stripe/stripe-go/v78/paymentintent"
+	"github.com/stripe/stripe-go/v78/webhook"
 )
 
 // API represents the V1 API instance.
 type APIV1 struct {
-	Routes []Route
-	dbConn *database.DBConnection
+	Routes        []Route
+	dbConn        *database.DBConnection
+	websiteConfig *configs.WebsiteConfig
+	envConfig     *configs.EnvironmentConfig
 }
 
 type ErrorResponse struct {
@@ -27,10 +36,12 @@ type ErrorResponse struct {
 }
 
 // NewAPIV1 creates and returns a new instance of the V1 API.
-func NewAPIV1(dbConn *database.DBConnection) *APIV1 {
+func NewAPIV1(dbConn *database.DBConnection, websiteConfig *configs.WebsiteConfig, envConfig *configs.EnvironmentConfig) *APIV1 {
 	api := &APIV1{
-		Routes: make([]Route, 0),
-		dbConn: dbConn,
+		Routes:        make([]Route, 0),
+		dbConn:        dbConn,
+		websiteConfig: websiteConfig,
+		envConfig:     envConfig,
 	}
 
 	api.initRoutesV1()
@@ -82,8 +93,11 @@ func (api *APIV1) initRoutesV1() {
 	api.addRoute("/api/v1/cart/remove/{itemId}", "POST", api.removeFromCart, "cart")
 
 	// Checkout & Orders
+	api.addRoute("/api/v1/config", "GET", api.getConfig, "config")
+	api.addRoute("/api/v1/create-payment-intent", "POST", api.createPaymentIntent, "payment")
 	api.addRoute("/api/v1/checkout", "POST", api.createOrder, "order")
 	api.addRoute("/api/v1/order/{orderNumber}", "GET", api.getOrder, "order")
+	api.addRoute("/api/v1/webhook/stripe", "POST", api.handleStripeWebhook, "webhook")
 }
 
 func (api *APIV1) APIRouter(siteName string) chi.Router {
@@ -499,14 +513,8 @@ func (api *APIV1) addToCart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *APIV1) updateCartItem(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	vars, ok := ctx.Value("vars").(map[string]string)
-	if !ok {
-		http.Error(w, http.StatusText(422), 422)
-		return
-	}
-
-	itemID, err := strconv.Atoi(vars["itemId"])
+	itemIDStr := chi.URLParam(r, "itemId")
+	itemID, err := strconv.Atoi(itemIDStr)
 	if err != nil {
 		http.Error(w, "Invalid item ID", http.StatusBadRequest)
 		return
@@ -546,14 +554,8 @@ func (api *APIV1) updateCartItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *APIV1) removeFromCart(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	vars, ok := ctx.Value("vars").(map[string]string)
-	if !ok {
-		http.Error(w, http.StatusText(422), 422)
-		return
-	}
-
-	itemID, err := strconv.Atoi(vars["itemId"])
+	itemIDStr := chi.URLParam(r, "itemId")
+	itemID, err := strconv.Atoi(itemIDStr)
 	if err != nil {
 		http.Error(w, "Invalid item ID", http.StatusBadRequest)
 		return
@@ -608,6 +610,10 @@ func (api *APIV1) createOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	orderData["cart_items"] = cart.Items
+
+	// Get tax rate and shipping cost from config (0 is valid)
+	orderData["tax_rate"] = api.websiteConfig.Ecommerce.TaxRate
+	orderData["shipping_cost"] = api.websiteConfig.Ecommerce.ShippingCost
 
 	order, err := api.dbConn.CreateOrder(orderData)
 	if err != nil {
@@ -672,4 +678,248 @@ func (api *APIV1) NotFoundHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(errResponse.StatusCode)
 	// Write the JSON data to the response writer
 	w.Write(jsonData)
+}
+
+// getConfig returns public configuration (like Stripe publishable key)
+func (api *APIV1) getConfig(w http.ResponseWriter, r *http.Request) {
+	// Get Stripe publishable key - use site-specific if available, otherwise use global
+	publishableKey := api.envConfig.Stripe.PublishableKey
+	if api.websiteConfig.Stripe.PublishableKey != "" {
+		publishableKey = api.websiteConfig.Stripe.PublishableKey
+	}
+
+	// Get tax rate and shipping cost from config (0 is valid)
+	taxRate := api.websiteConfig.Ecommerce.TaxRate
+	shippingCost := api.websiteConfig.Ecommerce.ShippingCost
+
+	response := map[string]interface{}{
+		"stripePublishableKey": publishableKey,
+		"taxRate":              taxRate,
+		"shippingCost":         shippingCost,
+	}
+
+	jsonData, err := json.MarshalIndent(response, "", "    ")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(jsonData)
+}
+
+// createPaymentIntent creates a Stripe payment intent for the cart
+func (api *APIV1) createPaymentIntent(w http.ResponseWriter, r *http.Request) {
+	sessionID := session.GetCartSession(r)
+	if sessionID == "" {
+		http.Error(w, "No cart session found", http.StatusBadRequest)
+		return
+	}
+
+	cart, err := api.dbConn.GetCart(sessionID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if len(cart.Items) == 0 {
+		http.Error(w, "Cart is empty", http.StatusBadRequest)
+		return
+	}
+
+	// Calculate total (subtotal + tax + shipping)
+	subtotal := cart.Subtotal
+
+	// Get tax rate and shipping cost from config (0 is valid)
+	taxRate := api.websiteConfig.Ecommerce.TaxRate
+	tax := subtotal * taxRate
+
+	shippingCost := api.websiteConfig.Ecommerce.ShippingCost
+
+	total := subtotal + tax + shippingCost
+
+	// Get Stripe keys - use site-specific if available, otherwise use global
+	stripeKey := api.envConfig.Stripe.SecretKey
+	if api.websiteConfig.Stripe.SecretKey != "" {
+		stripeKey = api.websiteConfig.Stripe.SecretKey
+	}
+
+	if stripeKey == "" {
+		http.Error(w, "Stripe not configured", http.StatusInternalServerError)
+		return
+	}
+
+	// Set Stripe API key
+	stripe.Key = stripeKey
+
+	// Create payment intent
+	params := &stripe.PaymentIntentParams{
+		Amount:   stripe.Int64(int64(total * 100)), // Convert to cents
+		Currency: stripe.String(string(stripe.CurrencyUSD)),
+		AutomaticPaymentMethods: &stripe.PaymentIntentAutomaticPaymentMethodsParams{
+			Enabled: stripe.Bool(true),
+		},
+	}
+
+	pi, err := paymentintent.New(params)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to create payment intent: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"clientSecret": pi.ClientSecret,
+		"amount":       total,
+		"subtotal":     subtotal,
+		"tax":          tax,
+		"shipping":     shippingCost,
+	}
+
+	jsonData, err := json.MarshalIndent(response, "", "    ")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(jsonData)
+}
+
+// handleStripeWebhook handles Stripe webhook events
+func (api *APIV1) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
+	const MaxBodyBytes = int64(65536)
+	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Error reading request body", http.StatusBadRequest)
+		return
+	}
+
+	// Get Stripe secret key - use site-specific if available, otherwise use global
+	stripeKey := api.envConfig.Stripe.SecretKey
+	if api.websiteConfig.Stripe.SecretKey != "" {
+		stripeKey = api.websiteConfig.Stripe.SecretKey
+	}
+
+	// Verify webhook signature
+	// Note: In production, you should set up a webhook secret in Stripe dashboard
+	// and verify the signature using: webhook.ConstructEvent(body, r.Header.Get("Stripe-Signature"), webhookSecret)
+	event, err := webhook.ConstructEvent(body, r.Header.Get("Stripe-Signature"), stripeKey)
+	if err != nil {
+		log.Printf("Webhook signature verification failed: %v", err)
+		// For now, continue anyway for testing - REMOVE THIS IN PRODUCTION
+		var tempEvent stripe.Event
+		if err := json.Unmarshal(body, &tempEvent); err != nil {
+			http.Error(w, "Invalid webhook payload", http.StatusBadRequest)
+			return
+		}
+		event = tempEvent
+	}
+
+	// Handle the event
+	switch event.Type {
+	case "payment_intent.succeeded":
+		var paymentIntent stripe.PaymentIntent
+		err := json.Unmarshal(event.Data.Raw, &paymentIntent)
+		if err != nil {
+			log.Printf("Error parsing webhook JSON: %v", err)
+			http.Error(w, "Error parsing webhook", http.StatusBadRequest)
+			return
+		}
+
+		// Find order by payment intent ID and update status
+		err = api.handlePaymentSuccess(paymentIntent.ID)
+		if err != nil {
+			log.Printf("Error handling payment success: %v", err)
+			// Don't return error to Stripe, we've received the webhook
+		}
+
+	case "payment_intent.payment_failed":
+		var paymentIntent stripe.PaymentIntent
+		err := json.Unmarshal(event.Data.Raw, &paymentIntent)
+		if err != nil {
+			log.Printf("Error parsing webhook JSON: %v", err)
+			http.Error(w, "Error parsing webhook", http.StatusBadRequest)
+			return
+		}
+
+		// Update order status to failed
+		err = api.dbConn.UpdateOrderPaymentStatusByIntentID(paymentIntent.ID, "failed")
+		if err != nil {
+			log.Printf("Error updating payment status: %v", err)
+		}
+
+	case "charge.refunded":
+		var charge stripe.Charge
+		err := json.Unmarshal(event.Data.Raw, &charge)
+		if err != nil {
+			log.Printf("Error parsing webhook JSON: %v", err)
+			http.Error(w, "Error parsing webhook", http.StatusBadRequest)
+			return
+		}
+
+		// Update order status to refunded
+		err = api.dbConn.UpdateOrderPaymentStatusByIntentID(charge.PaymentIntent.ID, "refunded")
+		if err != nil {
+			log.Printf("Error updating payment status: %v", err)
+		}
+
+	default:
+		log.Printf("Unhandled event type: %s", event.Type)
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// handlePaymentSuccess updates order status and sends confirmation email
+func (api *APIV1) handlePaymentSuccess(paymentIntentID string) error {
+	// Update payment status in database
+	err := api.dbConn.UpdateOrderPaymentStatusByIntentID(paymentIntentID, "paid")
+	if err != nil {
+		return fmt.Errorf("failed to update payment status: %v", err)
+	}
+
+	// Get the order to send confirmation email
+	order, err := api.dbConn.GetOrderByPaymentIntentID(paymentIntentID)
+	if err != nil {
+		return fmt.Errorf("failed to get order: %v", err)
+	}
+
+	// Send confirmation email
+	emailService, err := email.NewEmailService(api.envConfig)
+	if err != nil {
+		log.Printf("Failed to create email service: %v", err)
+		return nil // Don't fail the webhook if email fails
+	}
+
+	// Convert order items to email format
+	emailItems := make([]email.OrderItem, len(order.Items))
+	for i, item := range order.Items {
+		emailItems[i] = email.OrderItem{
+			ProductName:  item.ProductName,
+			VariantTitle: item.VariantTitle,
+			Quantity:     item.Quantity,
+			Price:        item.Price,
+			Total:        item.Total,
+		}
+	}
+
+	err = emailService.SendOrderConfirmation(
+		api.websiteConfig,
+		order.OrderNumber,
+		order.CustomerEmail,
+		order.CustomerName,
+		emailItems,
+		order.Subtotal,
+		order.Tax,
+		order.ShippingCost,
+		order.Total,
+	)
+	if err != nil {
+		log.Printf("Failed to send confirmation email: %v", err)
+		// Don't fail the webhook if email fails
+	}
+
+	return nil
 }

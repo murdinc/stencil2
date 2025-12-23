@@ -33,6 +33,7 @@ type PageData struct {
 	Template         configs.TemplateConfig
 	Preview          bool
 	ErrorDescription string
+	CartItemCount    int
 }
 
 func (website *Website) ExecuteTemplate(w http.ResponseWriter, tpl configs.TemplateConfig, pageData PageData) {

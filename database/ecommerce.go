@@ -29,12 +29,14 @@ func (db *DBConnection) InitEcommerceTables() error {
 			inventory_policy VARCHAR(50) DEFAULT 'deny',
 			status VARCHAR(50) DEFAULT 'draft',
 			featured BOOLEAN DEFAULT FALSE,
+			sort_order INT DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			released_date DATETIME,
 			INDEX idx_slug (slug),
 			INDEX idx_status (status),
-			INDEX idx_featured (featured)
+			INDEX idx_featured (featured),
+			INDEX idx_sort_order (sort_order)
 		)`,
 
 		// Collections table
@@ -229,7 +231,7 @@ func (db *DBConnection) GetProduct(slug string) (structs.Product, error) {
 func (db *DBConnection) GetProducts(vars map[string]string, params map[string]string) ([]structs.Product, error) {
 	offset, count := defaultOffsetCount(vars)
 
-	orderby := `released_date DESC`
+	orderby := `sort_order ASC, released_date DESC`
 	if value, exists := params["sort"]; exists {
 		switch value {
 		case "price_asc":
@@ -244,7 +246,7 @@ func (db *DBConnection) GetProducts(vars map[string]string, params map[string]st
 	sqlQuery := fmt.Sprintf(`
 		SELECT
 			id, name, slug, description, price, compare_at_price,
-			sku, inventory_quantity, inventory_policy, status, featured,
+			sku, inventory_quantity, inventory_policy, status, featured, sort_order,
 			created_at, updated_at, released_date
 		FROM products_unified
 		WHERE status = 'published'
@@ -265,7 +267,7 @@ func (db *DBConnection) GetProducts(vars map[string]string, params map[string]st
 		err := rows.Scan(
 			&product.ID, &product.Name, &product.Slug, &product.Description,
 			&product.Price, &product.CompareAtPrice, &product.SKU,
-			&product.InventoryQuantity, &product.InventoryPolicy, &product.Status, &product.Featured,
+			&product.InventoryQuantity, &product.InventoryPolicy, &product.Status, &product.Featured, &product.SortOrder,
 			&product.CreatedAt, &product.UpdatedAt, &releasedDate,
 		)
 		if err != nil {
@@ -292,7 +294,7 @@ func (db *DBConnection) GetProducts(vars map[string]string, params map[string]st
 func (db *DBConnection) GetFeaturedProducts(vars map[string]string, params map[string]string) ([]structs.Product, error) {
 	offset, count := defaultOffsetCount(vars)
 
-	orderby := `released_date DESC`
+	orderby := `sort_order ASC, released_date DESC`
 	if value, exists := params["sort"]; exists {
 		switch value {
 		case "price_asc":
@@ -307,7 +309,7 @@ func (db *DBConnection) GetFeaturedProducts(vars map[string]string, params map[s
 	sqlQuery := fmt.Sprintf(`
 		SELECT
 			id, name, slug, description, price, compare_at_price,
-			sku, inventory_quantity, inventory_policy, status, featured,
+			sku, inventory_quantity, inventory_policy, status, featured, sort_order,
 			created_at, updated_at, released_date
 		FROM products_unified
 		WHERE status = 'published' AND featured = 1
@@ -328,7 +330,7 @@ func (db *DBConnection) GetFeaturedProducts(vars map[string]string, params map[s
 		err := rows.Scan(
 			&product.ID, &product.Name, &product.Slug, &product.Description,
 			&product.Price, &product.CompareAtPrice, &product.SKU,
-			&product.InventoryQuantity, &product.InventoryPolicy, &product.Status, &product.Featured,
+			&product.InventoryQuantity, &product.InventoryPolicy, &product.Status, &product.Featured, &product.SortOrder,
 			&product.CreatedAt, &product.UpdatedAt, &releasedDate,
 		)
 		if err != nil {
@@ -664,7 +666,7 @@ func (db *DBConnection) getCartItems(cartID string) ([]structs.CartItem, error) 
 	sqlQuery := `
 		SELECT
 			ci.id, ci.product_id, ci.variant_id, ci.quantity, ci.price,
-			p.name, p.slug, p.description,
+			p.name, p.slug, p.description, p.price,
 			ifnull(pv.title, ''), ifnull(pv.option1, ''), ifnull(pv.option2, ''), ifnull(pv.option3, '')
 		FROM cart_items ci
 		JOIN products_unified p ON ci.product_id = p.id
@@ -683,12 +685,15 @@ func (db *DBConnection) getCartItems(cartID string) ([]structs.CartItem, error) 
 		var item structs.CartItem
 		err := rows.Scan(
 			&item.ID, &item.ProductID, &item.VariantID, &item.Quantity, &item.Price,
-			&item.Product.Name, &item.Product.Slug, &item.Product.Description,
+			&item.Product.Name, &item.Product.Slug, &item.Product.Description, &item.Product.Price,
 			&item.Variant.Title, &item.Variant.Option1, &item.Variant.Option2, &item.Variant.Option3,
 		)
 		if err != nil {
 			return nil, err
 		}
+
+		// Load product images
+		item.Product.Images, _ = db.getProductImages(item.ProductID)
 
 		item.Total = item.Price * float64(item.Quantity)
 		items = append(items, item)
@@ -763,8 +768,23 @@ func (db *DBConnection) CreateOrder(orderData map[string]interface{}) (structs.O
 
 	// Extract data from map
 	cartItems := orderData["cart_items"].([]structs.CartItem)
-	customerEmail := orderData["customer_email"].(string)
-	customerName := orderData["customer_name"].(string)
+	customerEmail := orderData["email"].(string)
+
+	// Extract shipping address (nested object)
+	shippingAddr := orderData["shipping_address"].(map[string]interface{})
+	firstName := shippingAddr["first_name"].(string)
+	lastName := shippingAddr["last_name"].(string)
+	customerName := firstName + " " + lastName
+
+	// Extract payment information (if provided)
+	paymentIntentID := ""
+	if val, ok := orderData["payment_intent_id"].(string); ok {
+		paymentIntentID = val
+	}
+	paymentStatus := "pending"
+	if val, ok := orderData["payment_status"].(string); ok {
+		paymentStatus = val
+	}
 
 	// Calculate totals
 	subtotal := 0.0
@@ -772,25 +792,46 @@ func (db *DBConnection) CreateOrder(orderData map[string]interface{}) (structs.O
 		subtotal += item.Total
 	}
 
-	tax := subtotal * 0.08 // 8% tax - should be configurable
-	shippingCost := 10.0   // Flat rate - should be configurable
+	// Get tax rate and shipping cost from orderData (0 is valid)
+	taxRate := 0.0
+	if tr, ok := orderData["tax_rate"].(float64); ok {
+		taxRate = tr
+	}
+	tax := subtotal * taxRate
+
+	shippingCost := 0.0
+	if sc, ok := orderData["shipping_cost"].(float64); ok {
+		shippingCost = sc
+	}
+
 	total := subtotal + tax + shippingCost
+
+	// Build full address from nested fields
+	address1 := shippingAddr["address"].(string)
+	address2 := ""
+	if addr2, ok := shippingAddr["address2"].(string); ok {
+		address2 = addr2
+	}
+	city := shippingAddr["city"].(string)
+	state := shippingAddr["state"].(string)
+	zip := shippingAddr["zip"].(string)
+	country := shippingAddr["country"].(string)
 
 	// Insert order
 	sqlQuery := `
 		INSERT INTO orders (
 			order_number, customer_email, customer_name,
-			shipping_address_line1, shipping_city, shipping_state, shipping_zip, shipping_country,
+			shipping_address_line1, shipping_address_line2, shipping_city, shipping_state, shipping_zip, shipping_country,
 			subtotal, tax, shipping_cost, total,
-			payment_status, fulfillment_status, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unfulfilled', NOW(), NOW())
+			payment_status, fulfillment_status, stripe_payment_intent_id, payment_method, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unfulfilled', ?, 'card', NOW(), NOW())
 	`
 
 	result, err := db.ExecuteQuery(sqlQuery,
 		orderNumber, customerEmail, customerName,
-		orderData["shipping_address_line1"], orderData["shipping_city"],
-		orderData["shipping_state"], orderData["shipping_zip"], orderData["shipping_country"],
+		address1, address2, city, state, zip, country,
 		subtotal, tax, shippingCost, total,
+		paymentStatus, paymentIntentID,
 	)
 	if err != nil {
 		return structs.Order{}, err
@@ -801,7 +842,7 @@ func (db *DBConnection) CreateOrder(orderData map[string]interface{}) (structs.O
 		return structs.Order{}, err
 	}
 
-	// Insert order items
+	// Insert order items and deduct inventory
 	for _, item := range cartItems {
 		itemQuery := `
 			INSERT INTO order_items (
@@ -815,6 +856,39 @@ func (db *DBConnection) CreateOrder(orderData map[string]interface{}) (structs.O
 		)
 		if err != nil {
 			return structs.Order{}, err
+		}
+
+		// Deduct inventory
+		if item.VariantID > 0 {
+			// Deduct from variant inventory
+			inventoryQuery := `
+				UPDATE product_variants
+				SET inventory_quantity = inventory_quantity - ?
+				WHERE id = ? AND inventory_quantity >= ?
+			`
+			result, err := db.ExecuteQuery(inventoryQuery, item.Quantity, item.VariantID, item.Quantity)
+			if err != nil {
+				return structs.Order{}, fmt.Errorf("failed to deduct variant inventory: %v", err)
+			}
+			rowsAffected, _ := result.RowsAffected()
+			if rowsAffected == 0 {
+				return structs.Order{}, fmt.Errorf("insufficient inventory for variant ID %d", item.VariantID)
+			}
+		} else {
+			// Deduct from product inventory
+			inventoryQuery := `
+				UPDATE products_unified
+				SET inventory_quantity = inventory_quantity - ?
+				WHERE id = ? AND inventory_quantity >= ?
+			`
+			result, err := db.ExecuteQuery(inventoryQuery, item.Quantity, item.ProductID, item.Quantity)
+			if err != nil {
+				return structs.Order{}, fmt.Errorf("failed to deduct product inventory: %v", err)
+			}
+			rowsAffected, _ := result.RowsAffected()
+			if rowsAffected == 0 {
+				return structs.Order{}, fmt.Errorf("insufficient inventory for product ID %d", item.ProductID)
+			}
 		}
 	}
 
@@ -906,4 +980,59 @@ func (db *DBConnection) UpdateOrderPaymentStatus(orderNumber string, status stri
 	`
 	_, err := db.ExecuteQuery(sqlQuery, status, paymentIntentID, paymentMethod, orderNumber)
 	return err
+}
+
+// UpdateOrderPaymentStatusByIntentID updates payment status by payment intent ID
+func (db *DBConnection) UpdateOrderPaymentStatusByIntentID(paymentIntentID string, status string) error {
+	sqlQuery := `
+		UPDATE orders
+		SET payment_status = ?, updated_at = NOW()
+		WHERE stripe_payment_intent_id = ?
+	`
+	_, err := db.ExecuteQuery(sqlQuery, status, paymentIntentID)
+	return err
+}
+
+// GetOrderByPaymentIntentID retrieves an order by payment intent ID
+func (db *DBConnection) GetOrderByPaymentIntentID(paymentIntentID string) (structs.Order, error) {
+	sqlQuery := `
+		SELECT
+			id, order_number, customer_email, customer_name,
+			shipping_address_line1, shipping_address_line2,
+			shipping_city, shipping_state, shipping_zip, shipping_country,
+			subtotal, tax, shipping_cost, total,
+			payment_status, fulfillment_status, payment_method,
+			stripe_payment_intent_id, created_at, updated_at
+		FROM orders
+		WHERE stripe_payment_intent_id = ?
+		LIMIT 1
+	`
+
+	var order structs.Order
+	var shippingLine2, paymentMethod, stripeIntent sql.NullString
+
+	err := db.QueryRow(sqlQuery, paymentIntentID).Scan(
+		&order.ID, &order.OrderNumber, &order.CustomerEmail, &order.CustomerName,
+		&order.ShippingAddressLine1, &shippingLine2,
+		&order.ShippingCity, &order.ShippingState, &order.ShippingZip, &order.ShippingCountry,
+		&order.Subtotal, &order.Tax, &order.ShippingCost, &order.Total,
+		&order.PaymentStatus, &order.FulfillmentStatus, &paymentMethod,
+		&stripeIntent, &order.CreatedAt, &order.UpdatedAt,
+	)
+
+	if err != nil {
+		return structs.Order{}, err
+	}
+
+	order.ShippingAddressLine2 = shippingLine2.String
+	order.PaymentMethod = paymentMethod.String
+	order.StripePaymentIntent = stripeIntent.String
+
+	// Get order items
+	order.Items, err = db.getOrderItems(order.ID)
+	if err != nil {
+		return order, err
+	}
+
+	return order, nil
 }

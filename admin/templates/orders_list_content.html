@@ -1,0 +1,100 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>Orders</h2>
+    <p>Manage orders for {{.Website.SiteName}}</p>
+</div>
+
+<div class="card" style="margin-bottom: 20px;">
+    <form method="GET" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; align-items: end;">
+        <div>
+            <label style="display: block; margin-bottom: 4px; font-weight: 600; font-size: 14px;">Payment Status</label>
+            <select name="payment_status" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="">All</option>
+                <option value="pending" {{if eq .Filters.PaymentStatus "pending"}}selected{{end}}>Pending</option>
+                <option value="paid" {{if eq .Filters.PaymentStatus "paid"}}selected{{end}}>Paid</option>
+                <option value="failed" {{if eq .Filters.PaymentStatus "failed"}}selected{{end}}>Failed</option>
+                <option value="refunded" {{if eq .Filters.PaymentStatus "refunded"}}selected{{end}}>Refunded</option>
+            </select>
+        </div>
+        <div>
+            <label style="display: block; margin-bottom: 4px; font-weight: 600; font-size: 14px;">Fulfillment Status</label>
+            <select name="fulfillment_status" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="">All</option>
+                <option value="unfulfilled" {{if eq .Filters.FulfillmentStatus "unfulfilled"}}selected{{end}}>Unfulfilled</option>
+                <option value="processing" {{if eq .Filters.FulfillmentStatus "processing"}}selected{{end}}>Processing</option>
+                <option value="fulfilled" {{if eq .Filters.FulfillmentStatus "fulfilled"}}selected{{end}}>Fulfilled</option>
+                <option value="shipped" {{if eq .Filters.FulfillmentStatus "shipped"}}selected{{end}}>Shipped</option>
+            </select>
+        </div>
+        <div>
+            <label style="display: block; margin-bottom: 4px; font-weight: 600; font-size: 14px;">Sort By</label>
+            <select name="sort" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="date_desc" {{if eq .Filters.Sort "date_desc"}}selected{{end}}>Newest First</option>
+                <option value="date_asc" {{if eq .Filters.Sort "date_asc"}}selected{{end}}>Oldest First</option>
+                <option value="total_desc" {{if eq .Filters.Sort "total_desc"}}selected{{end}}>Highest Total</option>
+                <option value="total_asc" {{if eq .Filters.Sort "total_asc"}}selected{{end}}>Lowest Total</option>
+            </select>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button type="submit" class="btn">Apply Filters</button>
+            <a href="/site/{{.Website.ID}}/orders" class="btn" style="background: #6c757d;">Clear</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    {{if .Orders}}
+    <table>
+        <thead>
+            <tr>
+                <th>Order #</th>
+                <th>Customer</th>
+                <th>Email</th>
+                <th>Total</th>
+                <th>Payment</th>
+                <th>Fulfillment</th>
+                <th>Date</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Orders}}
+            <tr>
+                <td><strong>{{.OrderNumber}}</strong></td>
+                <td>{{.CustomerName}}</td>
+                <td>{{.CustomerEmail}}</td>
+                <td>${{printf "%.2f" .Total}}</td>
+                <td>
+                    {{if eq .PaymentStatus "pending"}}
+                        <span style="color: #f59e0b;">Pending</span>
+                    {{else if eq .PaymentStatus "paid"}}
+                        <span style="color: #48bb78;">Paid</span>
+                    {{else}}
+                        <span style="color: #f56565;">{{.PaymentStatus}}</span>
+                    {{end}}
+                </td>
+                <td>
+                    {{if eq .FulfillmentStatus "unfulfilled"}}
+                        <span style="color: #f59e0b;">Unfulfilled</span>
+                    {{else if eq .FulfillmentStatus "fulfilled"}}
+                        <span style="color: #48bb78;">Fulfilled</span>
+                    {{else}}
+                        <span>{{.FulfillmentStatus}}</span>
+                    {{end}}
+                </td>
+                <td>{{.CreatedAt.Format "Jan 2, 2006"}}</td>
+                <td class="actions">
+                    <a href="/site/{{$.Website.ID}}/orders/{{.ID}}" class="btn btn-sm">View</a>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <div class="empty-state">
+        <h3>No orders yet</h3>
+        <p>Orders will appear here when customers make purchases.</p>
+    </div>
+    {{end}}
+</div>
+{{end}}

@@ -1050,6 +1050,30 @@ func (s *AdminServer) handleProductDelete(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, fmt.Sprintf("/site/%s/products", websiteID), http.StatusSeeOther)
 }
 
+func (s *AdminServer) handleProductReorder(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	productID, err := strconv.Atoi(chi.URLParam(r, "productId"))
+	if err != nil {
+		http.Error(w, "Invalid product ID", http.StatusBadRequest)
+		return
+	}
+
+	direction := chi.URLParam(r, "direction")
+	if direction != "up" && direction != "down" {
+		http.Error(w, "Invalid direction", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.ReorderProduct(websiteID, productID, direction); err != nil {
+		http.Error(w, fmt.Sprintf("Error reordering product: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.LogActivity("reorder", "product", productID, websiteID, map[string]string{"direction": direction})
+
+	http.Redirect(w, r, fmt.Sprintf("/site/%s/products", websiteID), http.StatusSeeOther)
+}
+
 // Category/Collection handlers (simplified - just list and create/delete)
 func (s *AdminServer) handleCategoriesList(w http.ResponseWriter, r *http.Request) {
 	websiteID := chi.URLParam(r, "id")
@@ -1461,6 +1485,128 @@ func (s *AdminServer) handleImageDelete(w http.ResponseWriter, r *http.Request) 
 	s.LogActivity("delete", "image", imageID, websiteID, nil)
 
 	http.Redirect(w, r, fmt.Sprintf("/site/%s/images", websiteID), http.StatusSeeOther)
+}
+
+// handleOrdersList displays list of orders for a website
+func (s *AdminServer) handleOrdersList(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Parse filter parameters from query string
+	filters := OrderFilters{
+		PaymentStatus:     r.URL.Query().Get("payment_status"),
+		FulfillmentStatus: r.URL.Query().Get("fulfillment_status"),
+		Sort:              r.URL.Query().Get("sort"),
+	}
+
+	// Default sort
+	if filters.Sort == "" {
+		filters.Sort = "date_desc"
+	}
+
+	orders, err := s.GetOrdersFiltered(websiteID, filters)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error fetching orders: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	allSites, _ := s.GetAllWebsites()
+
+	data := map[string]interface{}{
+		"Title":         "Orders",
+		"Website":       website,
+		"Orders":        orders,
+		"AllSites":      allSites,
+		"CurrentSite":   website,
+		"ActiveSection": "orders",
+		"Filters":       filters,
+	}
+
+	s.renderWithLayout(w, r, "orders_list_content.html", data)
+}
+
+// handleOrderDetail displays order detail
+func (s *AdminServer) handleOrderDetail(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	orderIDStr := chi.URLParam(r, "orderId")
+	orderID, err := strconv.Atoi(orderIDStr)
+	if err != nil {
+		http.Error(w, "Invalid order ID", http.StatusBadRequest)
+		return
+	}
+
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	order, err := s.GetOrder(websiteID, orderID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error fetching order: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	allSites, _ := s.GetAllWebsites()
+
+	data := map[string]interface{}{
+		"Title":       "Order Detail",
+		"Website":     website,
+		"Order":       order,
+		"AllSites":    allSites,
+		"CurrentSite": website,
+		"ActiveSection": "orders",
+	}
+
+	s.renderWithLayout(w, r, "order_detail_content.html", data)
+}
+
+// handleOrderFulfillmentUpdate updates the fulfillment status of an order
+func (s *AdminServer) handleOrderFulfillmentUpdate(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	orderIDStr := chi.URLParam(r, "orderId")
+	orderID, err := strconv.Atoi(orderIDStr)
+	if err != nil {
+		http.Error(w, "Invalid order ID", http.StatusBadRequest)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get the order to check payment status
+	order, err := s.GetOrder(websiteID, orderID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error fetching order: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Only allow fulfillment updates if payment is completed
+	if order.PaymentStatus != "paid" {
+		http.Error(w, "Cannot update fulfillment status: payment has not been completed", http.StatusBadRequest)
+		return
+	}
+
+	fulfillmentStatus := r.FormValue("fulfillment_status")
+	if fulfillmentStatus == "" {
+		http.Error(w, "Fulfillment status is required", http.StatusBadRequest)
+		return
+	}
+
+	err = s.UpdateOrderFulfillmentStatus(websiteID, orderID, fulfillmentStatus)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error updating fulfillment status: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Redirect back to order detail page
+	http.Redirect(w, r, fmt.Sprintf("/site/%s/orders/%d", websiteID, orderID), http.StatusSeeOther)
 }
 
 // renderTemplate renders a template with data

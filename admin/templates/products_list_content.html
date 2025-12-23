@@ -16,6 +16,7 @@
                 <th>Price</th>
                 <th>SKU</th>
                 <th>Status</th>
+                <th>Reorder</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -27,6 +28,14 @@
                 <td>${{printf "%.2f" .Price}}</td>
                 <td>{{.SKU}}</td>
                 <td>{{.Status}}</td>
+                <td style="white-space:nowrap;">
+                    <form method="POST" action="/site/{{$.Website.ID}}/products/{{.ID}}/reorder/up" style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-success" style="padding:2px 8px;">↑</button>
+                    </form>
+                    <form method="POST" action="/site/{{$.Website.ID}}/products/{{.ID}}/reorder/down" style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-success" style="padding:2px 8px;">↓</button>
+                    </form>
+                </td>
                 <td class="actions">
                     <a href="/site/{{$.Website.ID}}/products/{{.ID}}/edit" class="btn btn-sm">Edit</a>
                     <form method="POST" action="/site/{{$.Website.ID}}/products/{{.ID}}/delete" style="display:inline;" onsubmit="return confirm('Delete this product?');">

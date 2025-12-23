@@ -53,6 +53,7 @@ type Product struct {
 	InventoryPolicy   string    `json:"inventoryPolicy"`
 	Status            string    `json:"status"`
 	Featured          bool      `json:"featured"`
+	SortOrder         int       `json:"sortOrder"`
 	ReleasedDate      time.Time `json:"releasedDate"`
 	CreatedAt         time.Time `json:"createdAt"`
 	UpdatedAt         time.Time `json:"updatedAt"`
@@ -92,6 +93,48 @@ type Image struct {
 	Width     int       `json:"width"`
 	Height    int       `json:"height"`
 	CreatedAt time.Time `json:"createdAt"`
+}
+
+// Order represents a customer order
+type Order struct {
+	ID                   int       `json:"id"`
+	OrderNumber          string    `json:"orderNumber"`
+	CustomerEmail        string    `json:"customerEmail"`
+	CustomerName         string    `json:"customerName"`
+	ShippingAddressLine1 string    `json:"shippingAddressLine1"`
+	ShippingAddressLine2 string    `json:"shippingAddressLine2"`
+	ShippingCity         string    `json:"shippingCity"`
+	ShippingState        string    `json:"shippingState"`
+	ShippingZip          string    `json:"shippingZip"`
+	ShippingCountry      string    `json:"shippingCountry"`
+	Subtotal             float64   `json:"subtotal"`
+	Tax                  float64   `json:"tax"`
+	ShippingCost         float64   `json:"shippingCost"`
+	Total                float64   `json:"total"`
+	PaymentStatus        string    `json:"paymentStatus"`
+	FulfillmentStatus    string    `json:"fulfillmentStatus"`
+	PaymentMethod        string    `json:"paymentMethod"`
+	Items                []OrderItem `json:"items"`
+	CreatedAt            time.Time `json:"createdAt"`
+	UpdatedAt            time.Time `json:"updatedAt"`
+}
+
+// OrderItem represents a line item in an order
+type OrderItem struct {
+	ID           int     `json:"id"`
+	ProductID    int     `json:"productId"`
+	ProductName  string  `json:"productName"`
+	VariantTitle string  `json:"variantTitle"`
+	Quantity     int     `json:"quantity"`
+	Price        float64 `json:"price"`
+	Total        float64 `json:"total"`
+}
+
+// OrderFilters represents filters for order queries
+type OrderFilters struct {
+	PaymentStatus     string
+	FulfillmentStatus string
+	Sort              string
 }
 
 // GetAllWebsites retrieves all websites from disk
@@ -431,8 +474,8 @@ func (s *AdminServer) GetProducts(websiteID string, limit, offset int) ([]Produc
 	}
 	defer db.Close()
 
-	query := `SELECT id, name, slug, description, price, compare_at_price, sku, inventory_quantity, inventory_policy, status, featured, created_at, updated_at
-		FROM products_unified ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	query := `SELECT id, name, slug, description, price, compare_at_price, sku, inventory_quantity, inventory_policy, status, featured, sort_order, created_at, updated_at
+		FROM products_unified ORDER BY sort_order ASC, created_at DESC LIMIT ? OFFSET ?`
 
 	rows, err := db.Query(query, limit, offset)
 	if err != nil {
@@ -443,7 +486,7 @@ func (s *AdminServer) GetProducts(websiteID string, limit, offset int) ([]Produc
 	products := []Product{}
 	for rows.Next() {
 		var p Product
-		err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Price, &p.CompareAtPrice, &p.SKU, &p.InventoryQuantity, &p.InventoryPolicy, &p.Status, &p.Featured, &p.CreatedAt, &p.UpdatedAt)
+		err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Price, &p.CompareAtPrice, &p.SKU, &p.InventoryQuantity, &p.InventoryPolicy, &p.Status, &p.Featured, &p.SortOrder, &p.CreatedAt, &p.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -461,12 +504,12 @@ func (s *AdminServer) GetProduct(websiteID string, productID int) (Product, erro
 	}
 	defer db.Close()
 
-	query := `SELECT id, name, slug, description, price, compare_at_price, sku, inventory_quantity, inventory_policy, status, featured, released_date, created_at, updated_at
+	query := `SELECT id, name, slug, description, price, compare_at_price, sku, inventory_quantity, inventory_policy, status, featured, sort_order, released_date, created_at, updated_at
 		FROM products_unified WHERE id = ?`
 
 	var p Product
 	var releasedDate sql.NullTime
-	err = db.QueryRow(query, productID).Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Price, &p.CompareAtPrice, &p.SKU, &p.InventoryQuantity, &p.InventoryPolicy, &p.Status, &p.Featured, &releasedDate, &p.CreatedAt, &p.UpdatedAt)
+	err = db.QueryRow(query, productID).Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Price, &p.CompareAtPrice, &p.SKU, &p.InventoryQuantity, &p.InventoryPolicy, &p.Status, &p.Featured, &p.SortOrder, &releasedDate, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return Product{}, err
 	}
@@ -477,7 +520,7 @@ func (s *AdminServer) GetProduct(websiteID string, productID int) (Product, erro
 	return p, nil
 }
 
-// CreateProduct creates a new product
+// CreateProduct creates a new product at the top and pushes others down
 func (s *AdminServer) CreateProduct(websiteID string, p Product) (int64, error) {
 	db, err := s.GetWebsiteConnection(websiteID)
 	if err != nil {
@@ -485,16 +528,34 @@ func (s *AdminServer) CreateProduct(websiteID string, p Product) (int64, error) 
 	}
 	defer db.Close()
 
-	query := `INSERT INTO products_unified (name, slug, description, price, compare_at_price, sku, inventory_quantity, inventory_policy, status, featured, released_date)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	// Start transaction
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	// Increment all existing products' sort_order by 1
+	_, err = tx.Exec(`UPDATE products_unified SET sort_order = sort_order + 1`)
+	if err != nil {
+		return 0, err
+	}
+
+	// Insert new product with sort_order = 0 (top position)
+	query := `INSERT INTO products_unified (name, slug, description, price, compare_at_price, sku, inventory_quantity, inventory_policy, status, featured, sort_order, released_date)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
 
 	var releasedDate interface{}
 	if !p.ReleasedDate.IsZero() {
 		releasedDate = p.ReleasedDate
 	}
 
-	result, err := db.Exec(query, p.Name, p.Slug, p.Description, p.Price, p.CompareAtPrice, p.SKU, p.InventoryQuantity, p.InventoryPolicy, p.Status, p.Featured, releasedDate)
+	result, err := tx.Exec(query, p.Name, p.Slug, p.Description, p.Price, p.CompareAtPrice, p.SKU, p.InventoryQuantity, p.InventoryPolicy, p.Status, p.Featured, releasedDate)
 	if err != nil {
+		return 0, err
+	}
+
+	if err = tx.Commit(); err != nil {
 		return 0, err
 	}
 
@@ -509,7 +570,7 @@ func (s *AdminServer) UpdateProduct(websiteID string, p Product) error {
 	}
 	defer db.Close()
 
-	query := `UPDATE products_unified SET name = ?, slug = ?, description = ?, price = ?, compare_at_price = ?, sku = ?, inventory_quantity = ?, inventory_policy = ?, status = ?, featured = ?, released_date = ?
+	query := `UPDATE products_unified SET name = ?, slug = ?, description = ?, price = ?, compare_at_price = ?, sku = ?, inventory_quantity = ?, inventory_policy = ?, status = ?, featured = ?, sort_order = ?, released_date = ?
 		WHERE id = ?`
 
 	var releasedDate interface{}
@@ -517,7 +578,7 @@ func (s *AdminServer) UpdateProduct(websiteID string, p Product) error {
 		releasedDate = p.ReleasedDate
 	}
 
-	_, err = db.Exec(query, p.Name, p.Slug, p.Description, p.Price, p.CompareAtPrice, p.SKU, p.InventoryQuantity, p.InventoryPolicy, p.Status, p.Featured, releasedDate, p.ID)
+	_, err = db.Exec(query, p.Name, p.Slug, p.Description, p.Price, p.CompareAtPrice, p.SKU, p.InventoryQuantity, p.InventoryPolicy, p.Status, p.Featured, p.SortOrder, releasedDate, p.ID)
 	return err
 }
 
@@ -532,6 +593,60 @@ func (s *AdminServer) DeleteProduct(websiteID string, productID int) error {
 	query := `DELETE FROM products_unified WHERE id = ?`
 	_, err = db.Exec(query, productID)
 	return err
+}
+
+// ReorderProduct swaps the sort_order of a product with an adjacent product
+func (s *AdminServer) ReorderProduct(websiteID string, productID int, direction string) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	// Get current product's sort_order
+	var currentSortOrder int
+	err = db.QueryRow(`SELECT sort_order FROM products_unified WHERE id = ?`, productID).Scan(&currentSortOrder)
+	if err != nil {
+		return err
+	}
+
+	var targetSortOrder int
+	var targetID int
+	if direction == "up" {
+		// Find the product with the next lower sort_order
+		err = db.QueryRow(`SELECT id, sort_order FROM products_unified WHERE sort_order < ? ORDER BY sort_order DESC LIMIT 1`, currentSortOrder).Scan(&targetID, &targetSortOrder)
+	} else if direction == "down" {
+		// Find the product with the next higher sort_order
+		err = db.QueryRow(`SELECT id, sort_order FROM products_unified WHERE sort_order > ? ORDER BY sort_order ASC LIMIT 1`, currentSortOrder).Scan(&targetID, &targetSortOrder)
+	}
+
+	if err == sql.ErrNoRows {
+		// Already at top/bottom, nothing to do - just return success
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	// Swap sort_order values
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Swap the two products' sort_order values
+	_, err = tx.Exec(`UPDATE products_unified SET sort_order = ? WHERE id = ?`, targetSortOrder, productID)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`UPDATE products_unified SET sort_order = ? WHERE id = ?`, currentSortOrder, targetID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // GetCategories retrieves categories for a specific website
@@ -1211,5 +1326,218 @@ func (s *AdminServer) UpdateCategoryCount(websiteID string, categoryID int) erro
 		WHERE id = ?
 	`
 	_, err = db.Exec(query, categoryID, categoryID)
+	return err
+}
+
+// GetOrders retrieves all orders for a website
+func (s *AdminServer) GetOrders(websiteID string) ([]Order, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			id, order_number, customer_email, customer_name,
+			shipping_address_line1, shipping_address_line2,
+			shipping_city, shipping_state, shipping_zip, shipping_country,
+			subtotal, tax, shipping_cost, total,
+			payment_status, fulfillment_status, payment_method,
+			created_at, updated_at
+		FROM orders
+		ORDER BY created_at DESC
+	`
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []Order
+	for rows.Next() {
+		var o Order
+		var shippingLine2, paymentMethod sql.NullString
+
+		err := rows.Scan(
+			&o.ID, &o.OrderNumber, &o.CustomerEmail, &o.CustomerName,
+			&o.ShippingAddressLine1, &shippingLine2,
+			&o.ShippingCity, &o.ShippingState, &o.ShippingZip, &o.ShippingCountry,
+			&o.Subtotal, &o.Tax, &o.ShippingCost, &o.Total,
+			&o.PaymentStatus, &o.FulfillmentStatus, &paymentMethod,
+			&o.CreatedAt, &o.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		o.ShippingAddressLine2 = shippingLine2.String
+		o.PaymentMethod = paymentMethod.String
+
+		orders = append(orders, o)
+	}
+
+	return orders, nil
+}
+
+// GetOrdersFiltered retrieves orders with filters and sorting
+func (s *AdminServer) GetOrdersFiltered(websiteID string, filters OrderFilters) ([]Order, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			id, order_number, customer_email, customer_name,
+			shipping_address_line1, shipping_address_line2,
+			shipping_city, shipping_state, shipping_zip, shipping_country,
+			subtotal, tax, shipping_cost, total,
+			payment_status, fulfillment_status, payment_method,
+			created_at, updated_at
+		FROM orders
+		WHERE 1=1
+	`
+
+	var args []interface{}
+
+	// Add payment status filter
+	if filters.PaymentStatus != "" {
+		query += " AND payment_status = ?"
+		args = append(args, filters.PaymentStatus)
+	}
+
+	// Add fulfillment status filter
+	if filters.FulfillmentStatus != "" {
+		query += " AND fulfillment_status = ?"
+		args = append(args, filters.FulfillmentStatus)
+	}
+
+	// Add sorting
+	switch filters.Sort {
+	case "date_asc":
+		query += " ORDER BY created_at ASC"
+	case "total_desc":
+		query += " ORDER BY total DESC"
+	case "total_asc":
+		query += " ORDER BY total ASC"
+	default: // date_desc
+		query += " ORDER BY created_at DESC"
+	}
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []Order
+	for rows.Next() {
+		var o Order
+		var shippingLine2, paymentMethod sql.NullString
+
+		err := rows.Scan(
+			&o.ID, &o.OrderNumber, &o.CustomerEmail, &o.CustomerName,
+			&o.ShippingAddressLine1, &shippingLine2,
+			&o.ShippingCity, &o.ShippingState, &o.ShippingZip, &o.ShippingCountry,
+			&o.Subtotal, &o.Tax, &o.ShippingCost, &o.Total,
+			&o.PaymentStatus, &o.FulfillmentStatus, &paymentMethod,
+			&o.CreatedAt, &o.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		o.ShippingAddressLine2 = shippingLine2.String
+		o.PaymentMethod = paymentMethod.String
+
+		orders = append(orders, o)
+	}
+
+	return orders, nil
+}
+
+// GetOrder retrieves a single order with its items
+func (s *AdminServer) GetOrder(websiteID string, orderID int) (Order, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return Order{}, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			id, order_number, customer_email, customer_name,
+			shipping_address_line1, shipping_address_line2,
+			shipping_city, shipping_state, shipping_zip, shipping_country,
+			subtotal, tax, shipping_cost, total,
+			payment_status, fulfillment_status, payment_method,
+			created_at, updated_at
+		FROM orders
+		WHERE id = ?
+	`
+
+	var o Order
+	var shippingLine2, paymentMethod sql.NullString
+
+	err = db.QueryRow(query, orderID).Scan(
+		&o.ID, &o.OrderNumber, &o.CustomerEmail, &o.CustomerName,
+		&o.ShippingAddressLine1, &shippingLine2,
+		&o.ShippingCity, &o.ShippingState, &o.ShippingZip, &o.ShippingCountry,
+		&o.Subtotal, &o.Tax, &o.ShippingCost, &o.Total,
+		&o.PaymentStatus, &o.FulfillmentStatus, &paymentMethod,
+		&o.CreatedAt, &o.UpdatedAt,
+	)
+	if err != nil {
+		return Order{}, err
+	}
+
+	o.ShippingAddressLine2 = shippingLine2.String
+	o.PaymentMethod = paymentMethod.String
+
+	// Get order items
+	itemsQuery := `
+		SELECT id, product_id, product_name, variant_title, quantity, price, total
+		FROM order_items
+		WHERE order_id = ?
+	`
+
+	rows, err := db.Query(itemsQuery, orderID)
+	if err != nil {
+		return o, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var item OrderItem
+		var variantTitle sql.NullString
+
+		err := rows.Scan(
+			&item.ID, &item.ProductID, &item.ProductName, &variantTitle,
+			&item.Quantity, &item.Price, &item.Total,
+		)
+		if err != nil {
+			return o, err
+		}
+
+		item.VariantTitle = variantTitle.String
+		o.Items = append(o.Items, item)
+	}
+
+	return o, nil
+}
+
+// UpdateOrderFulfillmentStatus updates the fulfillment status of an order
+func (s *AdminServer) UpdateOrderFulfillmentStatus(websiteID string, orderID int, status string) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	query := `UPDATE orders SET fulfillment_status = ?, updated_at = NOW() WHERE id = ?`
+	_, err = db.Exec(query, status, orderID)
 	return err
 }

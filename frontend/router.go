@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/murdinc/stencil2/api"
 	"github.com/murdinc/stencil2/media"
+	"github.com/murdinc/stencil2/session"
 )
 
 type NoListFile struct {
@@ -74,6 +75,14 @@ func (website *Website) GetRoute(name string) func(w http.ResponseWriter, r *htt
 			HideErrors: website.EnvironmentConfig.HideErrors,
 		}
 
+		// Get cart item count for header display
+		if cartSessionID := session.GetCartSession(r); cartSessionID != "" {
+			cart, err := website.DBConn.GetCart(cartSessionID)
+			if err == nil {
+				pageData.CartItemCount = len(cart.Items)
+			}
+		}
+
 		// get internal API Handler if specified
 		internalHandler, URLParams, err := website.APIHandler.API.GetInternalHandler(tpl.APIEndpoint)
 		if err != nil {
@@ -125,10 +134,7 @@ func (website *Website) GetRoute(name string) func(w http.ResponseWriter, r *htt
 					pageData.ErrorDescription = err.Error()
 					pageData.StatusCode = 500
 				}
-				if len(posts) == 0 {
-					pageData.ErrorString = "Page not found!"
-					pageData.StatusCode = 404
-				}
+				// Allow empty posts - template will show empty state
 				pageData.Posts = posts
 
 				// If filtering by category taxonomy, also fetch the category details
@@ -146,10 +152,7 @@ func (website *Website) GetRoute(name string) func(w http.ResponseWriter, r *htt
 					pageData.ErrorDescription = err.Error()
 					pageData.StatusCode = 500
 				}
-				if len(categories) == 0 {
-					pageData.ErrorString = "Page not found!"
-					pageData.StatusCode = 404
-				}
+				// Allow empty categories - template will show empty state
 				pageData.Categories = categories
 
 			case "product":
@@ -170,10 +173,7 @@ func (website *Website) GetRoute(name string) func(w http.ResponseWriter, r *htt
 					pageData.ErrorDescription = err.Error()
 					pageData.StatusCode = 500
 				}
-				if len(products) == 0 {
-					pageData.ErrorString = "No products available!"
-					pageData.StatusCode = 404
-				}
+				// Allow empty products - template will show empty state
 				pageData.Products = products
 
 			case "featured-products":
@@ -182,10 +182,7 @@ func (website *Website) GetRoute(name string) func(w http.ResponseWriter, r *htt
 					pageData.ErrorDescription = err.Error()
 					pageData.StatusCode = 500
 				}
-				if len(products) == 0 {
-					pageData.ErrorString = "No featured products available!"
-					pageData.StatusCode = 404
-				}
+				// Allow empty products - template will show empty state
 				pageData.Products = products
 
 			case "collection":
@@ -214,10 +211,7 @@ func (website *Website) GetRoute(name string) func(w http.ResponseWriter, r *htt
 					pageData.ErrorDescription = err.Error()
 					pageData.StatusCode = 500
 				}
-				if len(collections) == 0 {
-					pageData.ErrorString = "No collections available!"
-					pageData.StatusCode = 404
-				}
+				// Allow empty collections - template will show empty state
 				pageData.Collections = collections
 
 			default:
@@ -260,7 +254,7 @@ func (website *Website) GetRouter() func() chi.Router {
 
 		// Load API routes
 		if website.WebsiteConfig.APIVersion == 1 {
-			apiV1 := api.NewAPIV1(website.DBConn)
+			apiV1 := api.NewAPIV1(website.DBConn, website.WebsiteConfig, website.EnvironmentConfig)
 			r.Mount("/api", apiV1.APIRouter(website.WebsiteConfig.SiteName))
 			website.APIHandler = &api.APIHandler{API: apiV1}
 		}

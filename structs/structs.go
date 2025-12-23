@@ -91,6 +91,7 @@ type Product struct {
 	InventoryPolicy   string           `json:"inventory_policy"`
 	Status            string           `json:"status"`
 	Featured          bool             `json:"featured"`
+	SortOrder         int              `json:"sort_order"`
 	Images            []ProductImage   `json:"images"`
 	Variants          []ProductVariant `json:"variants"`
 	Collections       []Collection     `json:"collections"`
