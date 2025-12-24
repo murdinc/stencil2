@@ -1046,9 +1046,10 @@ func (api *APIV1) getTracking(w http.ResponseWriter, r *http.Request) {
 
 func (api *APIV1) createSMSSignup(w http.ResponseWriter, r *http.Request) {
 	var reqBody struct {
-		Phone  string `json:"phone"`
-		Email  string `json:"email"`
-		Source string `json:"source"`
+		CountryCode string `json:"countryCode"`
+		Phone       string `json:"phone"`
+		Email       string `json:"email"`
+		Source      string `json:"source"`
 	}
 
 	err := json.NewDecoder(r.Body).Decode(&reqBody)
@@ -1062,8 +1063,13 @@ func (api *APIV1) createSMSSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Default to +1 if not provided
+	if reqBody.CountryCode == "" {
+		reqBody.CountryCode = "+1"
+	}
+
 	// Create signup
-	signupID, err := api.dbConn.CreateSMSSignup(reqBody.Phone, reqBody.Email, reqBody.Source)
+	signupID, err := api.dbConn.CreateSMSSignup(reqBody.CountryCode, reqBody.Phone, reqBody.Email, reqBody.Source)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to create signup: %v", err), http.StatusInternalServerError)
 		return

@@ -212,11 +212,12 @@ type Customer struct {
 }
 
 type SMSSignup struct {
-	ID        int       `json:"id"`
-	Phone     string    `json:"phone"`
-	Email     string    `json:"email"`
-	Source    string    `json:"source"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          int       `json:"id"`
+	CountryCode string    `json:"country_code"`
+	Phone       string    `json:"phone"`
+	Email       string    `json:"email"`
+	Source      string    `json:"source"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type ParserOptions struct {

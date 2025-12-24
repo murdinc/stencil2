@@ -11,34 +11,44 @@
     <table>
         <thead>
             <tr>
+                <th>Reorder</th>
                 <th>Name</th>
                 <th>Slug</th>
                 <th>Price</th>
                 <th>SKU</th>
                 <th>Status</th>
-                <th>Reorder</th>
                 <th>Actions</th>
             </tr>
         </thead>
         <tbody>
-            {{range .Products}}
+            {{$productCount := len .Products}}
+            {{range $index, $product := .Products}}
             <tr>
-                <td><strong>{{.Name}}</strong></td>
-                <td><code>{{.Slug}}</code></td>
-                <td>${{printf "%.2f" .Price}}</td>
-                <td>{{.SKU}}</td>
-                <td>{{.Status}}</td>
                 <td style="white-space:nowrap;">
-                    <form method="POST" action="/site/{{$.Website.ID}}/products/{{.ID}}/reorder/up" style="display:inline;">
-                        <button type="submit" class="btn btn-sm btn-success" style="padding:2px 8px;">↑</button>
+                    <form style="display:inline;">
+                    {{if gt $index 0}}
+                        <button type="submit" formmethod="POST" formaction="/site/{{$.Website.ID}}/products/{{$product.ID}}/reorder/up" class="btn btn-sm btn-success" style="padding:2px 8px;">↑</button>
+                    {{else}}
+                        <button disabled class="btn btn-sm" style="padding:2px 8px;background:#ddd;color:#999;cursor:not-allowed;">↑</button>
+                    {{end}}
                     </form>
-                    <form method="POST" action="/site/{{$.Website.ID}}/products/{{.ID}}/reorder/down" style="display:inline;">
-                        <button type="submit" class="btn btn-sm btn-success" style="padding:2px 8px;">↓</button>
+                    <form style="display:inline;">
+                    {{$nextIndex := add $index 1}}
+                    {{if lt $nextIndex $productCount}}
+                        <button type="submit" formmethod="POST" formaction="/site/{{$.Website.ID}}/products/{{$product.ID}}/reorder/down" class="btn btn-sm btn-success" style="padding:2px 8px;">↓</button>
+                    {{else}}
+                        <button disabled class="btn btn-sm" style="padding:2px 8px;background:#ddd;color:#999;cursor:not-allowed;">↓</button>
+                    {{end}}
                     </form>
                 </td>
+                <td><strong>{{$product.Name}}</strong></td>
+                <td><code>{{$product.Slug}}</code></td>
+                <td>${{printf "%.2f" $product.Price}}</td>
+                <td>{{$product.SKU}}</td>
+                <td>{{$product.Status}}</td>
                 <td class="actions">
-                    <a href="/site/{{$.Website.ID}}/products/{{.ID}}/edit" class="btn btn-sm">Edit</a>
-                    <form method="POST" action="/site/{{$.Website.ID}}/products/{{.ID}}/delete" style="display:inline;" onsubmit="return confirm('Delete this product?');">
+                    <a href="/site/{{$.Website.ID}}/products/{{$product.ID}}/edit" class="btn btn-sm">Edit</a>
+                    <form method="POST" action="/site/{{$.Website.ID}}/products/{{$product.ID}}/delete" style="display:inline;" onsubmit="return confirm('Delete this product?');">
                         <button type="submit" class="btn btn-sm btn-danger">Delete</button>
                     </form>
                 </td>

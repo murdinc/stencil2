@@ -1933,22 +1933,43 @@ func (s *AdminServer) handleSMSSignupsList(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Get all SMS signups
-	signups, err := s.GetSMSSignups(websiteID)
+	// Parse filter parameters from query string
+	filters := SMSSignupFilters{
+		CountryCode: r.URL.Query().Get("country_code"),
+		Source:      r.URL.Query().Get("source"),
+		DateFrom:    r.URL.Query().Get("date_from"),
+		DateTo:      r.URL.Query().Get("date_to"),
+		Sort:        r.URL.Query().Get("sort"),
+	}
+
+	// Default sort
+	if filters.Sort == "" {
+		filters.Sort = "date_desc"
+	}
+
+	// Get all SMS signups with filters
+	signups, err := s.GetSMSSignups(websiteID, filters)
 	if err != nil {
 		http.Error(w, "Failed to load SMS signups", http.StatusInternalServerError)
 		return
 	}
 
+	// Get unique country codes and sources for filter dropdowns
+	countryCodes, _ := s.GetUniqueCountryCodes(websiteID)
+	sources, _ := s.GetUniqueSources(websiteID)
+
 	allSites, _ := s.GetAllWebsites()
 
 	data := map[string]interface{}{
-		"Title":          "SMS Signups",
-		"Website":        website,
-		"Signups":        signups,
-		"ActiveSection":  "sms-signups",
-		"AllSites":       allSites,
-		"CurrentSite":    website,
+		"Title":         "SMS Signups",
+		"Website":       website,
+		"Signups":       signups,
+		"ActiveSection": "sms-signups",
+		"AllSites":      allSites,
+		"CurrentSite":   website,
+		"Filters":       filters,
+		"CountryCodes":  countryCodes,
+		"Sources":       sources,
 	}
 
 	s.renderWithLayout(w, r, "sms_signups_list_content.html", data)
@@ -1977,8 +1998,22 @@ func (s *AdminServer) handleDeleteSMSSignup(w http.ResponseWriter, r *http.Reque
 func (s *AdminServer) handleExportSMSSignups(w http.ResponseWriter, r *http.Request) {
 	websiteID := chi.URLParam(r, "id")
 
-	// Get all SMS signups
-	signups, err := s.GetSMSSignups(websiteID)
+	// Parse filter parameters from query string
+	filters := SMSSignupFilters{
+		CountryCode: r.URL.Query().Get("country_code"),
+		Source:      r.URL.Query().Get("source"),
+		DateFrom:    r.URL.Query().Get("date_from"),
+		DateTo:      r.URL.Query().Get("date_to"),
+		Sort:        r.URL.Query().Get("sort"),
+	}
+
+	// Default sort
+	if filters.Sort == "" {
+		filters.Sort = "date_desc"
+	}
+
+	// Get filtered SMS signups
+	signups, err := s.GetSMSSignups(websiteID, filters)
 	if err != nil {
 		http.Error(w, "Failed to load SMS signups", http.StatusInternalServerError)
 		return
@@ -1989,12 +2024,13 @@ func (s *AdminServer) handleExportSMSSignups(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=sms-signups-%s.csv", time.Now().Format("2006-01-02")))
 
 	// Write CSV header
-	fmt.Fprintf(w, "ID,Phone,Email,Source,Created At\n")
+	fmt.Fprintf(w, "ID,Country Code,Phone,Email,Source,Created At\n")
 
 	// Write data rows
 	for _, signup := range signups {
-		fmt.Fprintf(w, "%d,%s,%s,%s,%s\n",
+		fmt.Fprintf(w, "%d,%s,%s,%s,%s,%s\n",
 			signup.ID,
+			signup.CountryCode,
 			signup.Phone,
 			signup.Email,
 			signup.Source,

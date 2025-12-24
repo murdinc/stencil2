@@ -214,11 +214,20 @@ type Customer struct {
 }
 
 type SMSSignup struct {
-	ID        int       `json:"id"`
-	Phone     string    `json:"phone"`
-	Email     string    `json:"email"`
-	Source    string    `json:"source"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID          int       `json:"id"`
+	CountryCode string    `json:"countryCode"`
+	Phone       string    `json:"phone"`
+	Email       string    `json:"email"`
+	Source      string    `json:"source"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type SMSSignupFilters struct {
+	CountryCode string
+	Source      string
+	DateFrom    string
+	DateTo      string
+	Sort        string
 }
 
 // GetAllWebsites retrieves all websites from disk
@@ -2094,8 +2103,8 @@ func (s *AdminServer) GetCustomerOrders(websiteID string, customerID int) ([]Ord
 	return orders, nil
 }
 
-// GetSMSSignups retrieves all SMS signups for a website
-func (s *AdminServer) GetSMSSignups(websiteID string) ([]SMSSignup, error) {
+// GetSMSSignups retrieves SMS signups for a website with filters
+func (s *AdminServer) GetSMSSignups(websiteID string, filters SMSSignupFilters) ([]SMSSignup, error) {
 	db, err := s.GetWebsiteConnection(websiteID)
 	if err != nil {
 		return nil, err
@@ -2103,12 +2112,48 @@ func (s *AdminServer) GetSMSSignups(websiteID string) ([]SMSSignup, error) {
 	defer db.Close()
 
 	query := `
-		SELECT id, phone, COALESCE(email, ''), COALESCE(source, ''), created_at
+		SELECT id, COALESCE(country_code, '+1'), phone, COALESCE(email, ''), COALESCE(source, ''), created_at
 		FROM sms_signups
-		ORDER BY created_at DESC
+		WHERE 1=1
 	`
 
-	rows, err := db.Query(query)
+	var args []interface{}
+
+	// Filter by country code
+	if filters.CountryCode != "" {
+		query += ` AND country_code = ?`
+		args = append(args, filters.CountryCode)
+	}
+
+	// Filter by source
+	if filters.Source != "" {
+		query += ` AND source = ?`
+		args = append(args, filters.Source)
+	}
+
+	// Filter by date range
+	if filters.DateFrom != "" {
+		query += ` AND created_at >= ?`
+		args = append(args, filters.DateFrom+" 00:00:00")
+	}
+	if filters.DateTo != "" {
+		query += ` AND created_at <= ?`
+		args = append(args, filters.DateTo+" 23:59:59")
+	}
+
+	// Sorting
+	switch filters.Sort {
+	case "date_asc":
+		query += ` ORDER BY created_at ASC`
+	case "phone_asc":
+		query += ` ORDER BY phone ASC`
+	case "phone_desc":
+		query += ` ORDER BY phone DESC`
+	default:
+		query += ` ORDER BY created_at DESC`
+	}
+
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -2117,7 +2162,7 @@ func (s *AdminServer) GetSMSSignups(websiteID string) ([]SMSSignup, error) {
 	var signups []SMSSignup
 	for rows.Next() {
 		var s SMSSignup
-		err := rows.Scan(&s.ID, &s.Phone, &s.Email, &s.Source, &s.CreatedAt)
+		err := rows.Scan(&s.ID, &s.CountryCode, &s.Phone, &s.Email, &s.Source, &s.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -2125,6 +2170,60 @@ func (s *AdminServer) GetSMSSignups(websiteID string) ([]SMSSignup, error) {
 	}
 
 	return signups, nil
+}
+
+// GetUniqueCountryCodes retrieves unique country codes from SMS signups
+func (s *AdminServer) GetUniqueCountryCodes(websiteID string) ([]string, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `SELECT DISTINCT country_code FROM sms_signups WHERE country_code IS NOT NULL ORDER BY country_code`
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var codes []string
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return nil, err
+		}
+		codes = append(codes, code)
+	}
+
+	return codes, nil
+}
+
+// GetUniqueSources retrieves unique sources from SMS signups
+func (s *AdminServer) GetUniqueSources(websiteID string) ([]string, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `SELECT DISTINCT source FROM sms_signups WHERE source IS NOT NULL AND source != '' ORDER BY source`
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sources []string
+	for rows.Next() {
+		var source string
+		if err := rows.Scan(&source); err != nil {
+			return nil, err
+		}
+		sources = append(sources, source)
+	}
+
+	return sources, nil
 }
 
 // DeleteSMSSignup deletes an SMS signup by ID

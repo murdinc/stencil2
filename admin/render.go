@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"path/filepath"
 
+	"github.com/Masterminds/sprig"
 	"github.com/go-chi/chi/v5"
 )
 
-// Template functions
-var templateFuncs = template.FuncMap{
-	"formatBytes": func(bytes int64) string {
+// Template functions - merge Sprig functions with custom ones
+var templateFuncs = func() template.FuncMap {
+	funcs := sprig.TxtFuncMap()
+	funcs["formatBytes"] = func(bytes int64) string {
 		if bytes == 0 {
 			return "—"
 		}
@@ -22,8 +24,9 @@ var templateFuncs = template.FuncMap{
 		}
 		mb := kb / 1024.0
 		return fmt.Sprintf("%.1f MB", mb)
-	},
-}
+	}
+	return funcs
+}()
 
 // LayoutData holds common data for all pages
 type LayoutData struct {

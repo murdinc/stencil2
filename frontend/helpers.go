@@ -78,10 +78,19 @@ func (website *Website) StartWatcher() {
 						}
 					}
 				case ".json":
-					templateConfigs, err := configs.ReadTemplateConfigs(website.WebsiteConfig.Directory)
-					website.TemplateConfigs = &templateConfigs
-					if err != nil {
-						log.Println(err)
+					// Check if it's a config file (config-dev.json or config-prod.json)
+					if strings.HasPrefix(filepath.Base(fileChanged), "config-") {
+						log.Printf("Config file changed, reloading website config...")
+						if err := website.ReloadConfig(website.EnvironmentConfig.ProdMode); err != nil {
+							log.Printf("Error reloading config: %v", err)
+						}
+					} else {
+						// Template config changed
+						templateConfigs, err := configs.ReadTemplateConfigs(website.WebsiteConfig.Directory)
+						website.TemplateConfigs = &templateConfigs
+						if err != nil {
+							log.Println(err)
+						}
 					}
 				default:
 
@@ -97,6 +106,11 @@ func (website *Website) StartWatcher() {
 
 	// Watch the templates folder recursively for changes.
 	if err := w.AddRecursive(website.WebsiteConfig.Directory + "/templates"); err != nil {
+		log.Fatalln(err)
+	}
+
+	// Also watch the website root directory for config file changes
+	if err := w.Add(website.WebsiteConfig.Directory); err != nil {
 		log.Fatalln(err)
 	}
 

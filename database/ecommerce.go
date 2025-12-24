@@ -194,11 +194,12 @@ func (db *DBConnection) InitEcommerceTables() error {
 		// SMS Signups (marketing list)
 		`CREATE TABLE IF NOT EXISTS sms_signups (
 			id INT PRIMARY KEY AUTO_INCREMENT,
-			phone VARCHAR(50) NOT NULL,
+			country_code VARCHAR(10) DEFAULT '+1',
+			phone VARCHAR(50) NOT NULL UNIQUE,
 			email VARCHAR(255) DEFAULT NULL,
 			source VARCHAR(100) DEFAULT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			INDEX idx_phone (phone),
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			INDEX idx_created_at (created_at)
 		)`,
 	}
@@ -1194,14 +1195,20 @@ func (db *DBConnection) UpdateCustomerStripeID(customerID int, stripeCustomerID 
 	return err
 }
 
-// CreateSMSSignup creates a new SMS signup entry
-func (db *DBConnection) CreateSMSSignup(phone, email, source string) (int64, error) {
+// CreateSMSSignup creates or updates an SMS signup entry
+func (db *DBConnection) CreateSMSSignup(countryCode, phone, email, source string) (int64, error) {
 	sqlQuery := `
-		INSERT INTO sms_signups (phone, email, source)
-		VALUES (?, ?, ?)
+		INSERT INTO sms_signups (country_code, phone, email, source)
+		VALUES (?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+			email = CASE
+				WHEN ? != '' AND ? != email THEN ?
+				ELSE email
+			END,
+			source = VALUES(source)
 	`
 
-	result, err := db.ExecuteQuery(sqlQuery, phone, email, source)
+	result, err := db.ExecuteQuery(sqlQuery, countryCode, phone, email, source, email, email, email)
 	if err != nil {
 		return 0, err
 	}
@@ -1212,7 +1219,7 @@ func (db *DBConnection) CreateSMSSignup(phone, email, source string) (int64, err
 // GetSMSSignups retrieves all SMS signups
 func (db *DBConnection) GetSMSSignups() ([]structs.SMSSignup, error) {
 	sqlQuery := `
-		SELECT id, phone, COALESCE(email, ''), COALESCE(source, ''), created_at
+		SELECT id, COALESCE(country_code, '+1'), phone, COALESCE(email, ''), COALESCE(source, ''), created_at
 		FROM sms_signups
 		ORDER BY created_at DESC
 	`
@@ -1226,7 +1233,7 @@ func (db *DBConnection) GetSMSSignups() ([]structs.SMSSignup, error) {
 	var signups []structs.SMSSignup
 	for rows.Next() {
 		var s structs.SMSSignup
-		err := rows.Scan(&s.ID, &s.Phone, &s.Email, &s.Source, &s.CreatedAt)
+		err := rows.Scan(&s.ID, &s.CountryCode, &s.Phone, &s.Email, &s.Source, &s.CreatedAt)
 		if err != nil {
 			return nil, err
 		}

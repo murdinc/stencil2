@@ -288,6 +288,10 @@ func (website *Website) GetRouter() func() chi.Router {
 		// Load Website templates
 		for _, template := range *website.TemplateConfigs {
 			if template.Path != "" {
+				// Skip unlock - it has explicit handlers
+				if template.Name == "unlock" {
+					continue
+				}
 				fmt.Printf("			> Setting up route: %s%s\n", website.WebsiteConfig.SiteName, template.Path)
 				r.With(RouterCtx).Get(template.Path, website.GetRoute(template.Name))
 				if template.PaginateType != 0 {
