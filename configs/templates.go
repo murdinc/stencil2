@@ -26,6 +26,7 @@ type TemplateConfig struct {
 	MimeType     string   `json:"mimeType"`
 	NoCache      bool     `json:"noCache"`
 	CacheTime    int      `json:"cacheTime"`
+	PublicAccess bool     `json:"publicAccess"` // Accessible even when early access is enabled
 	Directory    string
 }
 

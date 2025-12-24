@@ -380,10 +380,12 @@ func (website *Website) EarlyAccessMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Skip for unlock page itself
-		if r.URL.Path == "/unlock" {
-			next.ServeHTTP(w, r)
-			return
+		// Check if this path has publicAccess enabled in template config
+		for _, template := range *website.TemplateConfigs {
+			if template.Path == r.URL.Path && template.PublicAccess {
+				next.ServeHTTP(w, r)
+				return
+			}
 		}
 
 		// Skip for public assets, API routes, and sitemaps

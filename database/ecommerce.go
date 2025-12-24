@@ -190,6 +190,17 @@ func (db *DBConnection) InitEcommerceTables() error {
 			INDEX idx_order_id (order_id),
 			INDEX idx_product_id (product_id)
 		)`,
+
+		// SMS Signups (marketing list)
+		`CREATE TABLE IF NOT EXISTS sms_signups (
+			id INT PRIMARY KEY AUTO_INCREMENT,
+			phone VARCHAR(50) NOT NULL,
+			email VARCHAR(255) DEFAULT NULL,
+			source VARCHAR(100) DEFAULT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			INDEX idx_phone (phone),
+			INDEX idx_created_at (created_at)
+		)`,
 	}
 
 	for _, schema := range schemas {
@@ -1180,5 +1191,54 @@ func (db *DBConnection) UpdateCustomerStripeID(customerID int, stripeCustomerID 
 	`
 
 	_, err := db.ExecuteQuery(sqlQuery, stripeCustomerID, customerID)
+	return err
+}
+
+// CreateSMSSignup creates a new SMS signup entry
+func (db *DBConnection) CreateSMSSignup(phone, email, source string) (int64, error) {
+	sqlQuery := `
+		INSERT INTO sms_signups (phone, email, source)
+		VALUES (?, ?, ?)
+	`
+
+	result, err := db.ExecuteQuery(sqlQuery, phone, email, source)
+	if err != nil {
+		return 0, err
+	}
+
+	return result.LastInsertId()
+}
+
+// GetSMSSignups retrieves all SMS signups
+func (db *DBConnection) GetSMSSignups() ([]structs.SMSSignup, error) {
+	sqlQuery := `
+		SELECT id, phone, COALESCE(email, ''), COALESCE(source, ''), created_at
+		FROM sms_signups
+		ORDER BY created_at DESC
+	`
+
+	rows, err := db.Database.Query(sqlQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var signups []structs.SMSSignup
+	for rows.Next() {
+		var s structs.SMSSignup
+		err := rows.Scan(&s.ID, &s.Phone, &s.Email, &s.Source, &s.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		signups = append(signups, s)
+	}
+
+	return signups, nil
+}
+
+// DeleteSMSSignup deletes an SMS signup by ID
+func (db *DBConnection) DeleteSMSSignup(signupID int) error {
+	sqlQuery := `DELETE FROM sms_signups WHERE id = ?`
+	_, err := db.ExecuteQuery(sqlQuery, signupID)
 	return err
 }

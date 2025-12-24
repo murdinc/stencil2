@@ -1,0 +1,53 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>SMS Signups</h2>
+    <p>Manage SMS signup list</p>
+</div>
+
+<div class="card" style="margin-bottom: 20px;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <strong style="font-size: 18px;">{{len .Signups}}</strong> signups
+        </div>
+        <a href="/site/{{.Website.ID}}/sms-signups/export" class="btn" style="display: inline-block;">Export to CSV</a>
+    </div>
+</div>
+
+<div class="card">
+    {{if .Signups}}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Phone</th>
+                <th>Email</th>
+                <th>Source</th>
+                <th>Created At</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Signups}}
+            <tr>
+                <td>{{.ID}}</td>
+                <td><strong>{{.Phone}}</strong></td>
+                <td>{{if .Email}}{{.Email}}{{else}}-{{end}}</td>
+                <td>{{if .Source}}{{.Source}}{{else}}-{{end}}</td>
+                <td>{{.CreatedAt.Format "Jan 2, 2006 3:04 PM"}}</td>
+                <td class="actions">
+                    <form method="POST" action="/site/{{$.Website.ID}}/sms-signups/{{.ID}}/delete" style="display: inline;">
+                        <button type="submit" class="btn btn-sm" style="background: #dc2626;" onclick="return confirm('Are you sure you want to delete this signup?')">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <div class="empty-state">
+        <h3>No SMS signups yet</h3>
+        <p>Signups will appear here when people sign up via SMS.</p>
+    </div>
+    {{end}}
+</div>
+{{end}}

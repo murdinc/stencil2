@@ -213,6 +213,14 @@ type Customer struct {
 	LastOrder  *time.Time `json:"lastOrderDate"`
 }
 
+type SMSSignup struct {
+	ID        int       `json:"id"`
+	Phone     string    `json:"phone"`
+	Email     string    `json:"email"`
+	Source    string    `json:"source"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 // GetAllWebsites retrieves all websites from disk
 func (s *AdminServer) GetAllWebsites() ([]Website, error) {
 	websites := []Website{}
@@ -2084,4 +2092,50 @@ func (s *AdminServer) GetCustomerOrders(websiteID string, customerID int) ([]Ord
 	}
 
 	return orders, nil
+}
+
+// GetSMSSignups retrieves all SMS signups for a website
+func (s *AdminServer) GetSMSSignups(websiteID string) ([]SMSSignup, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT id, phone, COALESCE(email, ''), COALESCE(source, ''), created_at
+		FROM sms_signups
+		ORDER BY created_at DESC
+	`
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var signups []SMSSignup
+	for rows.Next() {
+		var s SMSSignup
+		err := rows.Scan(&s.ID, &s.Phone, &s.Email, &s.Source, &s.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		signups = append(signups, s)
+	}
+
+	return signups, nil
+}
+
+// DeleteSMSSignup deletes an SMS signup by ID
+func (s *AdminServer) DeleteSMSSignup(websiteID string, signupID int) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	query := `DELETE FROM sms_signups WHERE id = ?`
+	_, err = db.Exec(query, signupID)
+	return err
 }

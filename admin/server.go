@@ -108,6 +108,11 @@ func (s *AdminServer) setupRoutes() {
 		// Customer management
 		r.Get("/site/{id}/customers", s.handleCustomersList)
 		r.Get("/site/{id}/customers/{customerId}", s.handleCustomerDetail)
+
+		// SMS Signups (Marketing)
+		r.Get("/site/{id}/sms-signups", s.handleSMSSignupsList)
+		r.Post("/site/{id}/sms-signups/{signupId}/delete", s.handleDeleteSMSSignup)
+		r.Get("/site/{id}/sms-signups/export", s.handleExportSMSSignups)
 	})
 
 	// Static assets for admin UI

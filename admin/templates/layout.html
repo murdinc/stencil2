@@ -355,6 +355,10 @@
             <a href="/site/{{.CurrentSite.ID}}/customers" class="sidebar-link {{if eq .ActiveSection "customers"}}active{{end}}">Customers</a>
         </div>
         <div class="sidebar-section">
+            <h3>Marketing</h3>
+            <a href="/site/{{.CurrentSite.ID}}/sms-signups" class="sidebar-link {{if eq .ActiveSection "sms-signups"}}active{{end}}">SMS Signups</a>
+        </div>
+        <div class="sidebar-section">
             <h3>Settings</h3>
             <a href="/site/{{.CurrentSite.ID}}/settings" class="sidebar-link {{if eq .ActiveSection "settings"}}active{{end}}">Site Settings</a>
         </div>

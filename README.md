@@ -384,22 +384,104 @@ Located at `websites/{site}/config-dev.json` or `websites/{site}/config-prod.jso
 
 Located at `websites/{site}/templates/{template-name}/{template-name}.json`:
 
+#### All Available Options
+
 ```json
 {
-  "name": "homepage",                  // Template identifier
-  "path": "/",                         // URL path
-  "paginateType": 0,                   // 0=none, 1=paginate, 2=302-redirect
-  "requires": ["common"],              // Required template dependencies
-  "jsFile": "main.js",                 // JavaScript file to load
-  "cssFile": "main.css",               // CSS file to load
-  "apiEndpoint": "/api/v1/posts",      // API endpoint for data
-  "apiTaxonomy": "category",           // Taxonomy type (category/tag/author)
-  "apiSlug": "technology",             // Taxonomy slug filter
-  "apiCount": 10,                      // Number of items to fetch
-  "apiOffset": 0,                      // Offset for pagination
-  "noCache": false,                    // Disable caching
-  "cacheTime": 300,                    // Cache TTL in seconds
-  "mimeType": "text/html"              // Response content type
+  "name": "homepage",
+  "path": "/",
+  "paginateType": 0,
+  "requires": ["common"],
+  "jsFile": "main.js",
+  "cssFile": "main.css",
+  "queryRow": "custom_query",
+  "apiEndpoint": "/api/v1/posts",
+  "apiTaxonomy": "category",
+  "apiSlug": "technology",
+  "apiCount": 10,
+  "apiOffset": 0,
+  "mimeType": "text/html",
+  "noCache": false,
+  "cacheTime": 300,
+  "publicAccess": false
+}
+```
+
+#### Field Reference
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | **Required.** Template identifier, must match directory name |
+| `path` | string | URL path for this template (e.g., `/`, `/about`, `/store/product/{slug}`) |
+| `paginateType` | int | Pagination mode: `0` = none, `1` = paginated URLs, `2` = 302 redirect to paginated URL |
+| `requires` | string[] | List of template directories to include (e.g., `["common", "sidebar"]`) |
+| `jsFile` | string | JavaScript file to load from template directory |
+| `cssFile` | string | CSS file to load from template directory |
+| `queryRow` | string | Custom database query identifier (advanced) |
+| `apiEndpoint` | string | API endpoint to fetch data from (e.g., `/api/v1/posts`, `/api/v1/products`) |
+| `apiTaxonomy` | string | Filter by taxonomy: `category`, `tag`, `author`, or `type` |
+| `apiSlug` | string | Slug value for taxonomy filter (e.g., `technology` for category) |
+| `apiCount` | int | Number of items to fetch from API (default varies by endpoint) |
+| `apiOffset` | int | Offset for pagination (skip first N items) |
+| `mimeType` | string | Response content type (default: `text/html`) |
+| `noCache` | bool | If `true`, disables all caching for this template |
+| `cacheTime` | int | Cache TTL in seconds (default: 0 = no cache) |
+| `publicAccess` | bool | If `true`, page is accessible even when early access protection is enabled |
+
+#### Common Examples
+
+**Simple Homepage**:
+```json
+{
+  "name": "homepage",
+  "path": "/",
+  "apiEndpoint": "/api/v1/posts",
+  "apiCount": 10,
+  "cacheTime": 300
+}
+```
+
+**Product Page with Dynamic Slug**:
+```json
+{
+  "name": "product",
+  "path": "/store/product/{slug}",
+  "apiEndpoint": "/api/v1/product/{slug}",
+  "requires": ["common"],
+  "noCache": true
+}
+```
+
+**Category Archive with Pagination**:
+```json
+{
+  "name": "category",
+  "path": "/category/{slug}",
+  "paginateType": 1,
+  "apiEndpoint": "/api/v1/category/{slug}/posts",
+  "apiCount": 20,
+  "cacheTime": 600
+}
+```
+
+**Public Page (Accessible During Early Access Lockdown)**:
+```json
+{
+  "name": "sms-signup",
+  "path": "/sms-signup",
+  "noCache": true,
+  "publicAccess": true
+}
+```
+
+**Custom MIME Type (JSON API)**:
+```json
+{
+  "name": "api-posts",
+  "path": "/posts.json",
+  "apiEndpoint": "/api/v1/posts",
+  "mimeType": "application/json",
+  "noCache": true
 }
 ```
 

@@ -108,6 +108,9 @@ func (api *APIV1) initRoutesV1() {
 	api.addRoute("/api/v1/order/{orderNumber}", "GET", api.getOrder, "order")
 	api.addRoute("/api/v1/tracking/{carrier}/{trackingNumber}", "GET", api.getTracking, "tracking")
 	api.addRoute("/api/v1/webhook/stripe", "POST", api.handleStripeWebhook, "webhook")
+
+	// Marketing
+	api.addRoute("/api/v1/sms-signup", "POST", api.createSMSSignup, "sms")
 }
 
 func (api *APIV1) APIRouter(siteName string) chi.Router {
@@ -1039,4 +1042,40 @@ func (api *APIV1) getTracking(w http.ResponseWriter, r *http.Request) {
 	// Return tracking information
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tracking)
+}
+
+func (api *APIV1) createSMSSignup(w http.ResponseWriter, r *http.Request) {
+	var reqBody struct {
+		Phone  string `json:"phone"`
+		Email  string `json:"email"`
+		Source string `json:"source"`
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&reqBody)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if reqBody.Phone == "" {
+		http.Error(w, "Phone number is required", http.StatusBadRequest)
+		return
+	}
+
+	// Create signup
+	signupID, err := api.dbConn.CreateSMSSignup(reqBody.Phone, reqBody.Email, reqBody.Source)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to create signup: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return success response
+	response := map[string]interface{}{
+		"success": true,
+		"id":      signupID,
+		"message": "Successfully signed up for SMS notifications",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }

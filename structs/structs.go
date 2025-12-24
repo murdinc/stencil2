@@ -211,6 +211,14 @@ type Customer struct {
 	LastOrder  *time.Time `json:"last_order_date"`
 }
 
+type SMSSignup struct {
+	ID        int       `json:"id"`
+	Phone     string    `json:"phone"`
+	Email     string    `json:"email"`
+	Source    string    `json:"source"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type ParserOptions struct {
 	StripTags bool
 }

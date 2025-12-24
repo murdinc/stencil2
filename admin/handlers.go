@@ -1922,6 +1922,87 @@ func (s *AdminServer) handleCustomerDetail(w http.ResponseWriter, r *http.Reques
 	s.renderWithLayout(w, r, "customer_detail_content.html", data)
 }
 
+// handleSMSSignupsList displays the list of SMS signups
+func (s *AdminServer) handleSMSSignupsList(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+
+	// Get website
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, "Website not found", http.StatusNotFound)
+		return
+	}
+
+	// Get all SMS signups
+	signups, err := s.GetSMSSignups(websiteID)
+	if err != nil {
+		http.Error(w, "Failed to load SMS signups", http.StatusInternalServerError)
+		return
+	}
+
+	allSites, _ := s.GetAllWebsites()
+
+	data := map[string]interface{}{
+		"Title":          "SMS Signups",
+		"Website":        website,
+		"Signups":        signups,
+		"ActiveSection":  "sms-signups",
+		"AllSites":       allSites,
+		"CurrentSite":    website,
+	}
+
+	s.renderWithLayout(w, r, "sms_signups_list_content.html", data)
+}
+
+// handleDeleteSMSSignup deletes an SMS signup
+func (s *AdminServer) handleDeleteSMSSignup(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	signupIDStr := chi.URLParam(r, "signupId")
+	signupID, err := strconv.Atoi(signupIDStr)
+	if err != nil {
+		http.Error(w, "Invalid signup ID", http.StatusBadRequest)
+		return
+	}
+
+	err = s.DeleteSMSSignup(websiteID, signupID)
+	if err != nil {
+		http.Error(w, "Failed to delete signup", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/site/%s/sms-signups", websiteID), http.StatusSeeOther)
+}
+
+// handleExportSMSSignups exports SMS signups to CSV
+func (s *AdminServer) handleExportSMSSignups(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+
+	// Get all SMS signups
+	signups, err := s.GetSMSSignups(websiteID)
+	if err != nil {
+		http.Error(w, "Failed to load SMS signups", http.StatusInternalServerError)
+		return
+	}
+
+	// Set headers for CSV download
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=sms-signups-%s.csv", time.Now().Format("2006-01-02")))
+
+	// Write CSV header
+	fmt.Fprintf(w, "ID,Phone,Email,Source,Created At\n")
+
+	// Write data rows
+	for _, signup := range signups {
+		fmt.Fprintf(w, "%d,%s,%s,%s,%s\n",
+			signup.ID,
+			signup.Phone,
+			signup.Email,
+			signup.Source,
+			signup.CreatedAt.Format("2006-01-02 15:04:05"),
+		)
+	}
+}
+
 // renderTemplate renders a template with data
 func (s *AdminServer) renderTemplate(w http.ResponseWriter, tmpl string, data interface{}) {
 	tmplPath := filepath.Join("admin", "templates", tmpl+".html")
