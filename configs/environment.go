@@ -29,10 +29,6 @@ type EnvironmentConfig struct {
 			Name string `json:"name"`
 		} `json:"database"`
 	} `json:"admin"`
-	Stripe struct {
-		PublishableKey string `json:"publishableKey"`
-		SecretKey      string `json:"secretKey"`
-	} `json:"stripe"`
 	Email struct {
 		Provider string `json:"provider"`
 		SES      struct {

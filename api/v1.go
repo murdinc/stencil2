@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,8 +17,10 @@ import (
 	"github.com/murdinc/stencil2/database"
 	"github.com/murdinc/stencil2/email"
 	"github.com/murdinc/stencil2/session"
+	"github.com/murdinc/stencil2/shippo"
 	"github.com/murdinc/stencil2/structs"
 	"github.com/stripe/stripe-go/v78"
+	"github.com/stripe/stripe-go/v78/customer"
 	"github.com/stripe/stripe-go/v78/paymentintent"
 	"github.com/stripe/stripe-go/v78/webhook"
 )
@@ -28,6 +31,7 @@ type APIV1 struct {
 	dbConn        *database.DBConnection
 	websiteConfig *configs.WebsiteConfig
 	envConfig     *configs.EnvironmentConfig
+	shippoClient  *shippo.Client
 }
 
 type ErrorResponse struct {
@@ -37,11 +41,15 @@ type ErrorResponse struct {
 
 // NewAPIV1 creates and returns a new instance of the V1 API.
 func NewAPIV1(dbConn *database.DBConnection, websiteConfig *configs.WebsiteConfig, envConfig *configs.EnvironmentConfig) *APIV1 {
+	// Get Shippo API key from site config
+	shippoKey := websiteConfig.Shippo.APIKey
+
 	api := &APIV1{
 		Routes:        make([]Route, 0),
 		dbConn:        dbConn,
 		websiteConfig: websiteConfig,
 		envConfig:     envConfig,
+		shippoClient:  shippo.NewClient(shippoKey),
 	}
 
 	api.initRoutesV1()
@@ -94,9 +102,11 @@ func (api *APIV1) initRoutesV1() {
 
 	// Checkout & Orders
 	api.addRoute("/api/v1/config", "GET", api.getConfig, "config")
+	api.addRoute("/api/v1/validate-address", "POST", api.validateAddress, "address")
 	api.addRoute("/api/v1/create-payment-intent", "POST", api.createPaymentIntent, "payment")
 	api.addRoute("/api/v1/checkout", "POST", api.createOrder, "order")
 	api.addRoute("/api/v1/order/{orderNumber}", "GET", api.getOrder, "order")
+	api.addRoute("/api/v1/tracking/{carrier}/{trackingNumber}", "GET", api.getTracking, "tracking")
 	api.addRoute("/api/v1/webhook/stripe", "POST", api.handleStripeWebhook, "webhook")
 }
 
@@ -127,13 +137,19 @@ func APIRouterCtx(next http.Handler) http.Handler {
 		count := chi.URLParam(r, "count")
 		offset := chi.URLParam(r, "offset")
 		page := chi.URLParam(r, "page")
+		carrier := chi.URLParam(r, "carrier")
+		trackingNumber := chi.URLParam(r, "trackingNumber")
+		orderNumber := chi.URLParam(r, "orderNumber")
 
 		vars := map[string]string{
-			"taxonomy": taxonomy,
-			"slug":     slug,
-			"count":    count,
-			"offset":   offset,
-			"page":     page,
+			"taxonomy":       taxonomy,
+			"slug":           slug,
+			"count":          count,
+			"offset":         offset,
+			"page":           page,
+			"carrier":        carrier,
+			"trackingNumber": trackingNumber,
+			"orderNumber":    orderNumber,
 		}
 
 		ctx := context.WithValue(r.Context(), "vars", vars)
@@ -682,11 +698,8 @@ func (api *APIV1) NotFoundHandler(w http.ResponseWriter, r *http.Request) {
 
 // getConfig returns public configuration (like Stripe publishable key)
 func (api *APIV1) getConfig(w http.ResponseWriter, r *http.Request) {
-	// Get Stripe publishable key - use site-specific if available, otherwise use global
-	publishableKey := api.envConfig.Stripe.PublishableKey
-	if api.websiteConfig.Stripe.PublishableKey != "" {
-		publishableKey = api.websiteConfig.Stripe.PublishableKey
-	}
+	// Get Stripe publishable key from site config
+	publishableKey := api.websiteConfig.Stripe.PublishableKey
 
 	// Get tax rate and shipping cost from config (0 is valid)
 	taxRate := api.websiteConfig.Ecommerce.TaxRate
@@ -727,6 +740,15 @@ func (api *APIV1) createPaymentIntent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse request body to extract customer email and shipping address
+	var requestBody map[string]interface{}
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err == nil {
+		json.Unmarshal(bodyBytes, &requestBody)
+		// Restore body for potential future reads
+		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	}
+
 	// Calculate total (subtotal + tax + shipping)
 	subtotal := cart.Subtotal
 
@@ -738,12 +760,8 @@ func (api *APIV1) createPaymentIntent(w http.ResponseWriter, r *http.Request) {
 
 	total := subtotal + tax + shippingCost
 
-	// Get Stripe keys - use site-specific if available, otherwise use global
-	stripeKey := api.envConfig.Stripe.SecretKey
-	if api.websiteConfig.Stripe.SecretKey != "" {
-		stripeKey = api.websiteConfig.Stripe.SecretKey
-	}
-
+	// Get Stripe secret key from site config
+	stripeKey := api.websiteConfig.Stripe.SecretKey
 	if stripeKey == "" {
 		http.Error(w, "Stripe not configured", http.StatusInternalServerError)
 		return
@@ -752,6 +770,40 @@ func (api *APIV1) createPaymentIntent(w http.ResponseWriter, r *http.Request) {
 	// Set Stripe API key
 	stripe.Key = stripeKey
 
+	// Try to get/create customer and link to Stripe
+	var stripeCustomerID string
+	if requestBody != nil {
+		if email, ok := requestBody["email"].(string); ok && email != "" {
+			if shippingAddr, ok := requestBody["shipping_address"].(map[string]interface{}); ok {
+				firstName, _ := shippingAddr["first_name"].(string)
+				lastName, _ := shippingAddr["last_name"].(string)
+
+				if firstName != "" && lastName != "" {
+					// Get or create local customer record
+					cust, err := api.dbConn.GetOrCreateCustomer(email, firstName, lastName)
+					if err == nil {
+						// Check if customer already has Stripe ID
+						if cust.StripeCustomerID != "" {
+							stripeCustomerID = cust.StripeCustomerID
+						} else {
+							// Create Stripe customer
+							stripeParams := &stripe.CustomerParams{
+								Email: stripe.String(email),
+								Name:  stripe.String(firstName + " " + lastName),
+							}
+							stripeCust, err := customer.New(stripeParams)
+							if err == nil && stripeCust != nil {
+								stripeCustomerID = stripeCust.ID
+								// Update local customer record with Stripe ID
+								api.dbConn.UpdateCustomerStripeID(cust.ID, stripeCust.ID)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// Create payment intent
 	params := &stripe.PaymentIntentParams{
 		Amount:   stripe.Int64(int64(total * 100)), // Convert to cents
@@ -759,6 +811,11 @@ func (api *APIV1) createPaymentIntent(w http.ResponseWriter, r *http.Request) {
 		AutomaticPaymentMethods: &stripe.PaymentIntentAutomaticPaymentMethodsParams{
 			Enabled: stripe.Bool(true),
 		},
+	}
+
+	// Link to Stripe customer if we have one
+	if stripeCustomerID != "" {
+		params.Customer = stripe.String(stripeCustomerID)
 	}
 
 	pi, err := paymentintent.New(params)
@@ -796,11 +853,8 @@ func (api *APIV1) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get Stripe secret key - use site-specific if available, otherwise use global
-	stripeKey := api.envConfig.Stripe.SecretKey
-	if api.websiteConfig.Stripe.SecretKey != "" {
-		stripeKey = api.websiteConfig.Stripe.SecretKey
-	}
+	// Get Stripe secret key from site config
+	stripeKey := api.websiteConfig.Stripe.SecretKey
 
 	// Verify webhook signature
 	// Note: In production, you should set up a webhook secret in Stripe dashboard
@@ -922,4 +976,67 @@ func (api *APIV1) handlePaymentSuccess(paymentIntentID string) error {
 	}
 
 	return nil
+}
+
+// validateAddress validates a shipping address using Shippo
+func (api *APIV1) validateAddress(w http.ResponseWriter, r *http.Request) {
+	var addressData map[string]string
+	err := json.NewDecoder(r.Body).Decode(&addressData)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Create Shippo address from request
+	addr := shippo.Address{
+		Name:    addressData["name"],
+		Street1: addressData["street1"],
+		Street2: addressData["street2"],
+		City:    addressData["city"],
+		State:   addressData["state"],
+		Zip:     addressData["zip"],
+		Country: addressData["country"],
+		Email:   addressData["email"],
+		Phone:   addressData["phone"],
+	}
+
+	// Validate with Shippo
+	validatedAddr, err := api.shippoClient.ValidateAddress(addr)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Address validation failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return validation results
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(validatedAddr)
+}
+
+// getTracking retrieves package tracking information using Shippo
+func (api *APIV1) getTracking(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars, ok := ctx.Value("vars").(map[string]string)
+	if !ok {
+		http.Error(w, http.StatusText(422), 422)
+		return
+	}
+
+	carrier := vars["carrier"]
+	trackingNumber := vars["trackingNumber"]
+
+	if carrier == "" || trackingNumber == "" {
+		http.Error(w, "Carrier and tracking number are required", http.StatusBadRequest)
+		return
+	}
+
+	// Get tracking from Shippo
+	tracking, err := api.shippoClient.GetTracking(carrier, trackingNumber)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to retrieve tracking: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return tracking information
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tracking)
 }

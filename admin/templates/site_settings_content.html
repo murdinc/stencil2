@@ -1,25 +1,184 @@
 {{define "content"}}
-<div class="content-header">
-    <h2>Site Settings</h2>
-    <p>Configure {{.Website.SiteName}}</p>
+<div class="content-header" style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+        <h2>Site Settings</h2>
+        <p>Configure {{.Website.SiteName}}</p>
+    </div>
+    <button type="submit" form="settingsForm" class="btn">Save All Settings</button>
 </div>
 
-<div class="card">
-    <h3>Basic Information</h3>
-    <form method="POST" action="/site/{{.Website.ID}}/settings">
+<form method="POST" action="/site/{{.Website.ID}}/settings" id="settingsForm">
+    <div class="card">
+        <h3>Basic Information</h3>
         <div class="form-group">
-            <label>Site Name</label>
-            <input type="text" name="site_name" value="{{.Website.SiteName}}" required>
+            <label>Site Name:</label>
+            <input type="text" name="siteName" value="{{.Website.SiteName}}" required>
         </div>
 
         <div class="form-group">
-            <label>Database Name</label>
-            <input type="text" name="database_name" value="{{.Website.ID}}" required>
+            <label>Database Name:</label>
+            <input type="text" name="databaseName" value="{{.Website.DatabaseName}}" required>
         </div>
 
-        <button type="submit" class="btn">Save Settings</button>
-    </form>
-</div>
+        <div class="form-group">
+            <label>HTTP Address:</label>
+            <input type="text" name="httpAddress" value="{{.Website.HTTPAddress}}" placeholder=":8080">
+        </div>
+
+        <div class="form-group">
+            <label>Media Proxy URL:</label>
+            <input type="text" name="mediaProxyUrl" value="{{.Website.MediaProxyURL}}" placeholder="https://example.com">
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Early Access Protection</h3>
+        <p style="color: #7f8c8d; margin-bottom: 16px;">Password-protect your entire site during development or launch preparation.</p>
+
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="earlyAccessEnabled" {{if .Website.EarlyAccessEnabled}}checked{{end}} style="width: auto; margin-right: 8px;">
+                Enable Early Access Mode
+            </label>
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">When enabled, visitors must enter a password to access the site</small>
+        </div>
+
+        <div class="form-group">
+            <label>Access Password:</label>
+            <input type="password" name="earlyAccessPassword" value="{{.Website.EarlyAccessPassword}}" placeholder="Enter unlock password" autocomplete="new-password" data-lpignore="true" data-form-type="other">
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">Visitors will need this password to unlock the site</small>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Stripe Payment Settings</h3>
+        <p style="color: #7f8c8d; margin-bottom: 16px;">Configure Stripe payment processing for this site.</p>
+
+        <div class="form-group">
+            <label>Publishable Key:</label>
+            <input type="text" name="stripePublishableKey" value="{{.Website.StripePublishableKey}}" placeholder="{{if .ProdMode}}pk_live_...{{else}}pk_test_...{{end}}">
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">Used for client-side payment forms</small>
+        </div>
+
+        <div class="form-group">
+            <label>Secret Key:</label>
+            <input type="password" name="stripeSecretKey" value="{{.Website.StripeSecretKey}}" placeholder="{{if .ProdMode}}sk_live_...{{else}}sk_test_...{{end}}">
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">Used for server-side payment processing</small>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Shippo Shipping Settings</h3>
+        <p style="color: #7f8c8d; margin-bottom: 16px;">Configure Shippo for shipping rates and label generation.</p>
+
+        <div class="form-group">
+            <label>API Key:</label>
+            <input type="password" name="shippoApiKey" value="{{.Website.ShippoAPIKey}}" placeholder="{{if .ProdMode}}shippo_live_...{{else}}shippo_test_...{{end}}">
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">Required for shipping functionality</small>
+        </div>
+
+        <div class="form-group">
+            <label>Label Format:</label>
+            <select name="labelFormat">
+                <option value="">Select format...</option>
+                <optgroup label="Thermal Printer Labels (Recommended)">
+                    <option value="PDF_4x6" {{if eq .Website.LabelFormat "PDF_4x6"}}selected{{end}}>PDF 4x6 (4×6 inch / 102×153 mm)</option>
+                    <option value="ZPLII" {{if eq .Website.LabelFormat "ZPLII"}}selected{{end}}>ZPL II (Zebra thermal printers)</option>
+                    <option value="PDF_2.3x7.5" {{if eq .Website.LabelFormat "PDF_2.3x7.5"}}selected{{end}}>PDF 2.3×7.5 (2.3×7.5 inch / 59×191 mm)</option>
+                    <option value="PNG_2.3x7.5" {{if eq .Website.LabelFormat "PNG_2.3x7.5"}}selected{{end}}>PNG 2.3×7.5 (2.3×7.5 inch / 59×191 mm)</option>
+                </optgroup>
+                <optgroup label="Standard Paper Labels">
+                    <option value="PDF_4x8" {{if eq .Website.LabelFormat "PDF_4x8"}}selected{{end}}>PDF 4×8 (4×8 inch / 100×200 mm)</option>
+                    <option value="PDF" {{if eq .Website.LabelFormat "PDF"}}selected{{end}}>PDF Letter (8.5×11 inch / 210×279 mm)</option>
+                    <option value="PDF_A4" {{if eq .Website.LabelFormat "PDF_A4"}}selected{{end}}>PDF A4 (8.3×11.7 inch / 210×297 mm)</option>
+                    <option value="PDF_A5" {{if eq .Website.LabelFormat "PDF_A5"}}selected{{end}}>PDF A5 (5.8×8.3 inch / 148×210 mm)</option>
+                    <option value="PDF_A6" {{if eq .Website.LabelFormat "PDF_A6"}}selected{{end}}>PDF A6 (4.1×5.8 inch / 105×148 mm)</option>
+                </optgroup>
+                <optgroup label="Image Format">
+                    <option value="PNG" {{if eq .Website.LabelFormat "PNG"}}selected{{end}}>PNG (Standard image)</option>
+                </optgroup>
+            </select>
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">Label format for shipping labels. Defaults to PDF (8.5×11) if not set.</small>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Email Settings</h3>
+        <div class="form-group">
+            <label>From Address:</label>
+            <input type="email" name="emailFromAddress" value="{{.Website.EmailFromAddress}}" placeholder="noreply@example.com">
+        </div>
+
+        <div class="form-group">
+            <label>From Name:</label>
+            <input type="text" name="emailFromName" value="{{.Website.EmailFromName}}" placeholder="Example Store">
+        </div>
+
+        <div class="form-group">
+            <label>Reply To:</label>
+            <input type="email" name="emailReplyTo" value="{{.Website.EmailReplyTo}}" placeholder="support@example.com">
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>E-commerce Settings</h3>
+        <div class="form-group">
+            <label>Tax Rate (decimal):</label>
+            <input type="number" name="taxRate" value="{{.Website.TaxRate}}" step="0.0001" placeholder="0.08" min="0" max="1">
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">Enter as decimal (e.g., 0.08 for 8%)</small>
+        </div>
+
+        <div class="form-group">
+            <label>Flat Shipping Cost ($):</label>
+            <input type="number" name="shippingCost" value="{{.Website.ShippingCost}}" step="0.01" placeholder="5.00" min="0">
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">Flat rate shipping (leave 0 for free shipping)</small>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Ship From Address</h3>
+        <p style="color: #7f8c8d; margin-bottom: 16px;">This address is used for calculating shipping rates and generating labels.</p>
+
+        <div class="form-group">
+            <label>Name/Company:</label>
+            <input type="text" name="shipFromName" value="{{.Website.ShipFromName}}" placeholder="Your Business Name">
+        </div>
+
+        <div class="form-group">
+            <label>Street Address 1:</label>
+            <input type="text" name="shipFromStreet1" value="{{.Website.ShipFromStreet1}}" placeholder="123 Main St">
+        </div>
+
+        <div class="form-group">
+            <label>Street Address 2:</label>
+            <input type="text" name="shipFromStreet2" value="{{.Website.ShipFromStreet2}}" placeholder="Suite 100">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+                <label>City:</label>
+                <input type="text" name="shipFromCity" value="{{.Website.ShipFromCity}}" placeholder="San Francisco">
+            </div>
+
+            <div class="form-group">
+                <label>State:</label>
+                <input type="text" name="shipFromState" value="{{.Website.ShipFromState}}" placeholder="CA">
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+                <label>ZIP Code:</label>
+                <input type="text" name="shipFromZip" value="{{.Website.ShipFromZip}}" placeholder="94102">
+            </div>
+
+            <div class="form-group">
+                <label>Country:</label>
+                <input type="text" name="shipFromCountry" value="{{.Website.ShipFromCountry}}" placeholder="US">
+            </div>
+        </div>
+    </div>
+</form>
 
 <div class="card">
     <h3>Danger Zone</h3>

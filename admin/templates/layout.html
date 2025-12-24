@@ -244,6 +244,7 @@
         .form-group input[type="text"],
         .form-group input[type="email"],
         .form-group input[type="number"],
+        .form-group input[type="password"],
         .form-group input[type="file"],
         .form-group textarea,
         .form-group select {
@@ -351,6 +352,7 @@
             <a href="/site/{{.CurrentSite.ID}}/products" class="sidebar-link {{if eq .ActiveSection "products"}}active{{end}}">Products</a>
             <a href="/site/{{.CurrentSite.ID}}/collections" class="sidebar-link {{if eq .ActiveSection "collections"}}active{{end}}">Collections</a>
             <a href="/site/{{.CurrentSite.ID}}/orders" class="sidebar-link {{if eq .ActiveSection "orders"}}active{{end}}">Orders</a>
+            <a href="/site/{{.CurrentSite.ID}}/customers" class="sidebar-link {{if eq .ActiveSection "customers"}}active{{end}}">Customers</a>
         </div>
         <div class="sidebar-section">
             <h3>Settings</h3>

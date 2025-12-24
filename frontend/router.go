@@ -36,6 +36,53 @@ func (website *Website) NotFoundHandler(w http.ResponseWriter, r *http.Request) 
 	website.RenderError(w, pageData)
 }
 
+// HandleUnlockPage renders the unlock page
+func (website *Website) HandleUnlockPage(w http.ResponseWriter, r *http.Request) {
+	// If early access is disabled, redirect to homepage
+	if !website.WebsiteConfig.EarlyAccess.Enabled {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	pageData := PageData{
+		StatusCode: 200,
+		ProdMode:   website.EnvironmentConfig.ProdMode,
+		HideErrors: website.EnvironmentConfig.HideErrors,
+	}
+	tpl := website.GetTemplate("unlock")
+	website.ExecuteTemplate(w, tpl, pageData)
+}
+
+// HandleUnlockSubmit handles password submission
+func (website *Website) HandleUnlockSubmit(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	password := r.FormValue("password")
+
+	// Check password against config
+	if password == website.WebsiteConfig.EarlyAccess.Password {
+		// Set session cookie
+		session.SetEarlyAccessSession(w, "unlocked")
+
+		// Always redirect to homepage
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	// Wrong password - show error
+	pageData := PageData{
+		StatusCode: 200,
+		ProdMode:   website.EnvironmentConfig.ProdMode,
+		HideErrors: website.EnvironmentConfig.HideErrors,
+		Error:      "Incorrect password. Please try again.",
+	}
+	tpl := website.GetTemplate("unlock")
+	website.ExecuteTemplate(w, tpl, pageData)
+}
+
 // Builds out a route for a given route name
 func (website *Website) GetRoute(name string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -229,7 +276,14 @@ func (website *Website) GetRouter() func() chi.Router {
 	router := func() chi.Router {
 		r := chi.NewRouter()
 
+		// Apply early access middleware globally
+		r.Use(website.EarlyAccessMiddleware)
+
 		r.NotFound(website.NotFoundHandler)
+
+		// Early access unlock route (exempt from middleware)
+		r.Get("/unlock", website.HandleUnlockPage)
+		r.Post("/unlock", website.HandleUnlockSubmit)
 
 		// Load Website templates
 		for _, template := range *website.TemplateConfigs {
@@ -315,6 +369,41 @@ func paginate302Redirect(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect to the main route with preserved parameters
 	http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
+}
+
+// EarlyAccessMiddleware checks if early access is enabled and redirects to unlock if needed
+func (website *Website) EarlyAccessMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip if early access not enabled
+		if !website.WebsiteConfig.EarlyAccess.Enabled {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Skip for unlock page itself
+		if r.URL.Path == "/unlock" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Skip for public assets, API routes, and sitemaps
+		if strings.HasPrefix(r.URL.Path, "/public/") ||
+			strings.HasPrefix(r.URL.Path, "/api/") ||
+			strings.HasPrefix(r.URL.Path, "/sitemaps/") ||
+			strings.HasPrefix(r.URL.Path, "/media-proxy/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Check if user has unlocked cookie
+		if session.GetEarlyAccessSession(r) == "unlocked" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Redirect to unlock page
+		http.Redirect(w, r, "/unlock", http.StatusSeeOther)
+	})
 }
 
 func RouterCtx(next http.Handler) http.Handler {

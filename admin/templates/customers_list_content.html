@@ -1,0 +1,77 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>Customers</h2>
+    <p>Manage customers</p>
+</div>
+
+<div class="card" style="margin-bottom: 20px;">
+    <form method="GET" style="display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: end;">
+        <div>
+            <label style="display: block; margin-bottom: 4px; font-weight: 600; font-size: 14px;">Sort By</label>
+            <select name="sort" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="total_desc" {{if eq .Filters.Sort "total_desc"}}selected{{end}}>Highest Total Spent</option>
+                <option value="total_asc" {{if eq .Filters.Sort "total_asc"}}selected{{end}}>Lowest Total Spent</option>
+                <option value="orders_desc" {{if eq .Filters.Sort "orders_desc"}}selected{{end}}>Most Orders</option>
+                <option value="date_desc" {{if eq .Filters.Sort "date_desc"}}selected{{end}}>Newest First</option>
+                <option value="date_asc" {{if eq .Filters.Sort "date_asc"}}selected{{end}}>Oldest First</option>
+            </select>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button type="submit" class="btn">Apply</button>
+            <a href="/site/{{.Website.ID}}/customers" class="btn" style="background: #6c757d;">Clear</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    {{if .Customers}}
+    <table>
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>Name</th>
+                <th>Orders</th>
+                <th>Total Spent</th>
+                <th>First Order</th>
+                <th>Last Order</th>
+                <th>Joined</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Customers}}
+            <tr>
+                <td><strong>{{.Email}}</strong></td>
+                <td>{{.FirstName}} {{.LastName}}</td>
+                <td>{{.OrderCount}}</td>
+                <td>${{printf "%.2f" .TotalSpent}}</td>
+                <td>
+                    {{if .FirstOrder}}
+                        {{.FirstOrder.Format "Jan 2, 2006"}}
+                    {{else}}
+                        -
+                    {{end}}
+                </td>
+                <td>
+                    {{if .LastOrder}}
+                        {{.LastOrder.Format "Jan 2, 2006"}}
+                    {{else}}
+                        -
+                    {{end}}
+                </td>
+                <td>{{.CreatedAt.Format "Jan 2, 2006"}}</td>
+                <td class="actions">
+                    <a href="/site/{{$.Website.ID}}/customers/{{.ID}}" class="btn btn-sm">View</a>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <div class="empty-state">
+        <h3>No customers yet</h3>
+        <p>Customers will appear here when they make their first purchase.</p>
+    </div>
+    {{end}}
+</div>
+{{end}}

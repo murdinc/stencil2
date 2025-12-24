@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/murdinc/stencil2/frontend"
 )
 
 // Helper function to get website from URL parameter (db name)
@@ -146,6 +147,7 @@ func (s *AdminServer) handleSiteSettings(w http.ResponseWriter, r *http.Request)
 		"Title":         site.SiteName + " - Settings",
 		"ActiveSection": "settings",
 		"Website":       site,
+		"ProdMode":      s.EnvConfig.ProdMode,
 	})
 }
 
@@ -158,19 +160,68 @@ func (s *AdminServer) handleSiteSettingsUpdate(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Get existing website to preserve directory
+	existingWebsite, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, "Website not found", http.StatusNotFound)
+		return
+	}
+
+	// Parse float values
+	taxRate := 0.0
+	if r.FormValue("taxRate") != "" {
+		fmt.Sscanf(r.FormValue("taxRate"), "%f", &taxRate)
+	}
+
+	shippingCost := 0.0
+	if r.FormValue("shippingCost") != "" {
+		fmt.Sscanf(r.FormValue("shippingCost"), "%f", &shippingCost)
+	}
+
 	website := Website{
 		ID:            websiteID,
 		SiteName:      r.FormValue("siteName"),
-		Directory:     r.FormValue("directory"),
+		Directory:     existingWebsite.Directory,
 		DatabaseName:  r.FormValue("databaseName"),
 		HTTPAddress:   r.FormValue("httpAddress"),
 		MediaProxyURL: r.FormValue("mediaProxyUrl"),
 		APIVersion:    1,
+
+		StripePublishableKey: r.FormValue("stripePublishableKey"),
+		StripeSecretKey:      r.FormValue("stripeSecretKey"),
+
+		ShippoAPIKey: r.FormValue("shippoApiKey"),
+		LabelFormat:  r.FormValue("labelFormat"),
+
+		EmailFromAddress: r.FormValue("emailFromAddress"),
+		EmailFromName:    r.FormValue("emailFromName"),
+		EmailReplyTo:     r.FormValue("emailReplyTo"),
+
+		TaxRate:      taxRate,
+		ShippingCost: shippingCost,
+
+		EarlyAccessEnabled:  r.FormValue("earlyAccessEnabled") == "on",
+		EarlyAccessPassword: r.FormValue("earlyAccessPassword"),
+
+		ShipFromName:    r.FormValue("shipFromName"),
+		ShipFromStreet1: r.FormValue("shipFromStreet1"),
+		ShipFromStreet2: r.FormValue("shipFromStreet2"),
+		ShipFromCity:    r.FormValue("shipFromCity"),
+		ShipFromState:   r.FormValue("shipFromState"),
+		ShipFromZip:     r.FormValue("shipFromZip"),
+		ShipFromCountry: r.FormValue("shipFromCountry"),
 	}
 
 	if err := s.UpdateWebsite(website); err != nil {
 		http.Error(w, fmt.Sprintf("Error updating website: %v", err), http.StatusInternalServerError)
 		return
+	}
+
+	// Reload the website configuration in the running frontend
+	if frontendWebsite, exists := frontend.GetWebsite(websiteID); exists {
+		if err := frontendWebsite.ReloadConfig(s.EnvConfig.ProdMode); err != nil {
+			log.Printf("Warning: Failed to reload website config: %v", err)
+		}
 	}
 
 	s.LogActivity("update", "website", 0, websiteID, website)
@@ -693,20 +744,12 @@ func (s *AdminServer) handleProductNew(w http.ResponseWriter, r *http.Request) {
 		collections = []Collection{}
 	}
 
-	// Load all images
-	images, err := s.GetImages(websiteID, 1000, 0)
-	if err != nil {
-		log.Printf("Error loading images: %v", err)
-		images = []Image{}
-	}
-
 	s.renderWithLayout(w, r, "product_form_content.html", map[string]interface{}{
 		"Title":         website.SiteName + " - New Product",
 		"ActiveSection": "products",
 		"FormTitle":     "Create New Product",
 		"Website":       website,
 		"Collections":   collections,
-		"Images":        images,
 		"Action":        fmt.Sprintf("/site/%s/products/new", websiteID),
 	})
 }
@@ -764,26 +807,14 @@ func (s *AdminServer) handleProductCreate(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	// Handle product images
-	position := 0
-
-	// Add existing images
-	existingImageIDStrs := r.Form["existing_images[]"]
-	for _, idStr := range existingImageIDStrs {
-		if imageID, err := strconv.Atoi(idStr); err == nil {
-			s.AddProductImage(websiteID, productID, imageID, position)
-			position++
-		}
-	}
-
-	// Upload and add new images
+	// Handle product images - direct upload to product_images_data
 	website, _ := s.GetWebsite(websiteID)
 	if website.ID != "" {
 		files := r.MultipartForm.File["product_images"]
 		altText := r.FormValue("new_images_alt")
 		credit := r.FormValue("new_images_credit")
 
-		for _, fileHeader := range files {
+		for position, fileHeader := range files {
 			file, err := fileHeader.Open()
 			if err != nil {
 				continue
@@ -808,20 +839,20 @@ func (s *AdminServer) handleProductCreate(w http.ResponseWriter, r *http.Request
 			fileInfo, _ := dst.Stat()
 			dst.Close()
 
-			// Create image record
+			// Create product image record directly (no shared image library)
 			imageURL := fmt.Sprintf("//%s/public/uploads/%s", website.HTTPAddress, filename)
-			image := Image{
-				URL:      imageURL,
-				AltText:  altText,
-				Credit:   credit,
-				Filename: fileHeader.Filename,
-				Size:     fileInfo.Size(),
+			productImage := ProductImageData{
+				ProductID: productID,
+				URL:       imageURL,
+				Filename:  fileHeader.Filename,
+				Filepath:  filePath,
+				AltText:   altText,
+				Credit:    credit,
+				Size:      fileInfo.Size(),
+				Position:  position,
 			}
 
-			if imageID, err := s.CreateImage(websiteID, image); err == nil {
-				s.AddProductImage(websiteID, productID, int(imageID), position)
-				position++
-			}
+			s.AddProductImageData(websiteID, productImage)
 		}
 	}
 
@@ -864,18 +895,11 @@ func (s *AdminServer) handleProductEdit(w http.ResponseWriter, r *http.Request) 
 		productCollections = []Collection{}
 	}
 
-	// Load all images
-	images, err := s.GetImages(websiteID, 1000, 0)
-	if err != nil {
-		log.Printf("Error loading images: %v", err)
-		images = []Image{}
-	}
-
 	// Load product images
-	productImages, err := s.GetProductImages(websiteID, productID)
+	productImages, err := s.GetProductImagesData(websiteID, productID)
 	if err != nil {
 		log.Printf("Error loading product images: %v", err)
-		productImages = []ProductImage{}
+		productImages = []ProductImageData{}
 	}
 
 	s.renderWithLayout(w, r, "product_form_content.html", map[string]interface{}{
@@ -886,7 +910,6 @@ func (s *AdminServer) handleProductEdit(w http.ResponseWriter, r *http.Request) 
 		"Product":            product,
 		"Collections":        collections,
 		"ProductCollections": productCollections,
-		"Images":             images,
 		"ProductImages":      productImages,
 		"Action":             fmt.Sprintf("/site/%s/products/%d/edit", websiteID, productID),
 	})
@@ -956,28 +979,19 @@ func (s *AdminServer) handleProductUpdate(w http.ResponseWriter, r *http.Request
 		log.Printf("Error setting product collections: %v", err)
 	}
 
-	// Handle image removals
+	// Handle image removals - deletes from DB and disk
 	removeImageIDStrs := r.Form["remove_images[]"]
 	for _, idStr := range removeImageIDStrs {
-		if piID, err := strconv.Atoi(idStr); err == nil {
-			s.RemoveProductImage(websiteID, piID)
+		if imageID, err := strconv.Atoi(idStr); err == nil {
+			s.DeleteProductImageData(websiteID, imageID)
 		}
 	}
 
-	// Get current max position
-	currentImages, _ := s.GetProductImages(websiteID, productID)
+	// Get current max position for new uploads
+	currentImages, _ := s.GetProductImagesData(websiteID, productID)
 	position := len(currentImages)
 
-	// Add existing images
-	existingImageIDStrs := r.Form["existing_images[]"]
-	for _, idStr := range existingImageIDStrs {
-		if imageID, err := strconv.Atoi(idStr); err == nil {
-			s.AddProductImage(websiteID, productID, imageID, position)
-			position++
-		}
-	}
-
-	// Upload and add new images
+	// Upload and add new images directly to product_images_data
 	website, _ := s.GetWebsite(websiteID)
 	if website.ID != "" {
 		files := r.MultipartForm.File["product_images"]
@@ -1009,20 +1023,21 @@ func (s *AdminServer) handleProductUpdate(w http.ResponseWriter, r *http.Request
 			fileInfo, _ := dst.Stat()
 			dst.Close()
 
-			// Create image record
+			// Create product image record directly (no shared image library)
 			imageURL := fmt.Sprintf("//%s/public/uploads/%s", website.HTTPAddress, filename)
-			image := Image{
-				URL:      imageURL,
-				AltText:  altText,
-				Credit:   credit,
-				Filename: fileHeader.Filename,
-				Size:     fileInfo.Size(),
+			productImage := ProductImageData{
+				ProductID: productID,
+				URL:       imageURL,
+				Filename:  fileHeader.Filename,
+				Filepath:  filePath,
+				AltText:   altText,
+				Credit:    credit,
+				Size:      fileInfo.Size(),
+				Position:  position,
 			}
 
-			if imageID, err := s.CreateImage(websiteID, image); err == nil {
-				s.AddProductImage(websiteID, productID, int(imageID), position)
-				position++
-			}
+			s.AddProductImageData(websiteID, productImage)
+			position++
 		}
 	}
 
@@ -1048,6 +1063,49 @@ func (s *AdminServer) handleProductDelete(w http.ResponseWriter, r *http.Request
 	s.LogActivity("delete", "product", productID, websiteID, nil)
 
 	http.Redirect(w, r, fmt.Sprintf("/site/%s/products", websiteID), http.StatusSeeOther)
+}
+
+func (s *AdminServer) handleProductImageReorder(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	productID, err := strconv.Atoi(chi.URLParam(r, "productId"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid product ID",
+		})
+		return
+	}
+
+	// Parse JSON body with array of image IDs in new order
+	var requestData struct {
+		ImageIDs []int `json:"imageIds"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid request data",
+		})
+		return
+	}
+
+	// Update positions
+	if err := s.UpdateProductImagePositions(websiteID, requestData.ImageIDs); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("Error updating image positions: %v", err),
+		})
+		return
+	}
+
+	s.LogActivity("reorder", "product_images", productID, websiteID, nil)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
 }
 
 func (s *AdminServer) handleProductReorder(w http.ResponseWriter, r *http.Request) {
@@ -1607,6 +1665,261 @@ func (s *AdminServer) handleOrderFulfillmentUpdate(w http.ResponseWriter, r *htt
 
 	// Redirect back to order detail page
 	http.Redirect(w, r, fmt.Sprintf("/site/%s/orders/%d", websiteID, orderID), http.StatusSeeOther)
+}
+
+// handleShippingRates gets shipping rates for an order
+func (s *AdminServer) handleShippingRates(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	websiteID := chi.URLParam(r, "id")
+	orderIDStr := chi.URLParam(r, "orderId")
+	orderID, err := strconv.Atoi(orderIDStr)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid order ID",
+		})
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Method not allowed",
+		})
+		return
+	}
+
+	// Parse form data for package dimensions (multipart or regular form)
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		// Try regular form parsing if multipart fails
+		if err := r.ParseForm(); err != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Invalid form data",
+			})
+			return
+		}
+	}
+
+	// Get order
+	order, err := s.GetOrder(websiteID, orderID)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("Error fetching order: %v", err),
+		})
+		return
+	}
+
+	// Parse package dimensions from form
+	length, _ := strconv.ParseFloat(r.FormValue("length"), 64)
+	width, _ := strconv.ParseFloat(r.FormValue("width"), 64)
+	height, _ := strconv.ParseFloat(r.FormValue("height"), 64)
+	weight, _ := strconv.ParseFloat(r.FormValue("weight"), 64)
+
+	if length <= 0 || width <= 0 || height <= 0 || weight <= 0 {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid package dimensions",
+		})
+		return
+	}
+
+	// Get rates from Shippo
+	rates, err := s.GetShippingRates(websiteID, order, length, width, height, weight)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("Error getting shipping rates: %v", err),
+		})
+		return
+	}
+
+	// Return rates as JSON
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"rates":   rates,
+	})
+}
+
+// handleShippingLabelPurchase purchases a shipping label for an order
+func (s *AdminServer) handleShippingLabelPurchase(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	websiteID := chi.URLParam(r, "id")
+	orderIDStr := chi.URLParam(r, "orderId")
+	orderID, err := strconv.Atoi(orderIDStr)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid order ID",
+		})
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Method not allowed",
+		})
+		return
+	}
+
+	// Parse form data (multipart or regular form)
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		// Try regular form parsing if multipart fails
+		if err := r.ParseForm(); err != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Invalid form data",
+			})
+			return
+		}
+	}
+
+	// Get the rate ID from form
+	rateID := r.FormValue("rate_id")
+	if rateID == "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Rate ID is required",
+		})
+		return
+	}
+
+	// Get order to verify payment status
+	order, err := s.GetOrder(websiteID, orderID)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("Error fetching order: %v", err),
+		})
+		return
+	}
+
+	// Only allow label purchase if payment is completed
+	if order.PaymentStatus != "paid" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Cannot purchase label: payment has not been completed",
+		})
+		return
+	}
+
+	// Purchase label
+	labelInfo, err := s.PurchaseShippingLabel(websiteID, orderID, rateID)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("Error purchasing label: %v", err),
+		})
+		return
+	}
+
+	// Return success with label info
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":        true,
+		"trackingNumber": labelInfo.TrackingNumber,
+		"labelUrl":       labelInfo.LabelURL,
+		"carrier":        labelInfo.Carrier,
+		"cost":           labelInfo.Cost,
+	})
+}
+
+// handleCustomersList displays the list of customers with statistics
+func (s *AdminServer) handleCustomersList(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+
+	// Get website
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, "Website not found", http.StatusNotFound)
+		return
+	}
+
+	// Parse filters from query params
+	filters := CustomerFilters{
+		Sort: r.URL.Query().Get("sort"),
+	}
+	if filters.Sort == "" {
+		filters.Sort = "total_desc" // Default sort
+	}
+
+	// Get customers
+	customers, err := s.GetCustomers(websiteID, filters)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error fetching customers: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	allSites, _ := s.GetAllWebsites()
+
+	data := map[string]interface{}{
+		"Title":         "Customers",
+		"Website":       website,
+		"Customers":     customers,
+		"AllSites":      allSites,
+		"CurrentSite":   website,
+		"ActiveSection": "customers",
+		"Filters":       filters,
+	}
+
+	s.renderWithLayout(w, r, "customers_list_content.html", data)
+}
+
+// handleCustomerDetail displays a single customer with order history
+func (s *AdminServer) handleCustomerDetail(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	customerIDStr := chi.URLParam(r, "customerId")
+
+	customerID, err := strconv.Atoi(customerIDStr)
+	if err != nil {
+		http.Error(w, "Invalid customer ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get website
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, "Website not found", http.StatusNotFound)
+		return
+	}
+
+	// Get customer
+	customer, err := s.GetCustomer(websiteID, customerID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error fetching customer: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Get customer orders
+	orders, err := s.GetCustomerOrders(websiteID, customerID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error fetching customer orders: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate average order value
+	avgOrderValue := 0.0
+	if customer.OrderCount > 0 {
+		avgOrderValue = customer.TotalSpent / float64(customer.OrderCount)
+	}
+
+	allSites, _ := s.GetAllWebsites()
+
+	data := map[string]interface{}{
+		"Title":          "Customer Details",
+		"Website":        website,
+		"Customer":       customer,
+		"Orders":         orders,
+		"AvgOrderValue":  avgOrderValue,
+		"AllSites":       allSites,
+		"CurrentSite":    website,
+		"ActiveSection":  "customers",
+	}
+
+	s.renderWithLayout(w, r, "customer_detail_content.html", data)
 }
 
 // renderTemplate renders a template with data

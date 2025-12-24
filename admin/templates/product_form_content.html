@@ -77,13 +77,12 @@
             <div style="border: 1px solid #ddd; border-radius: 4px; padding: 15px;">
                 {{if $.Product}}
                 <div id="current-images" style="margin-bottom: 15px;">
-                    <p style="font-size: 12px; color: #27ae60; margin: 0 0 10px 0;">Current images:</p>
-                    <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                    <p style="font-size: 12px; color: #27ae60; margin: 0 0 10px 0;">Current images (drag to reorder):</p>
+                    <div id="images-grid" style="display: flex; flex-wrap: wrap; gap: 10px;">
                         {{range .ProductImages}}
-                        <div style="position: relative; border: 1px solid #ddd; border-radius: 4px; padding: 5px;">
-                            <img src="{{.Image.URL}}" alt="{{.Image.AltText}}" style="width: 100px; height: 100px; object-fit: cover; border-radius: 4px;">
-                            <div style="font-size: 10px; color: #7f8c8d; margin-top: 5px; text-align: center;">Position: {{.Position}}</div>
-                            <label style="display: block; margin-top: 5px; font-size: 11px;">
+                        <div class="image-item" draggable="true" data-id="{{.ID}}" style="position: relative; border: 1px solid #ddd; border-radius: 4px; padding: 5px; cursor: move; background: white;">
+                            <img src="{{.URL}}" alt="{{.AltText}}" style="width: 150px; height: 150px; object-fit: cover; border-radius: 4px; pointer-events: none;">
+                            <label style="display: block; margin-top: 5px; font-size: 11px; cursor: pointer;">
                                 <input type="checkbox" name="remove_images[]" value="{{.ID}}" style="width: auto; margin-right: 3px;">
                                 Remove
                             </label>
@@ -93,20 +92,8 @@
                 </div>
                 {{end}}
 
-                {{if .Images}}
-                <div style="margin-bottom: 15px;">
-                    <label>Select existing images:</label>
-                    <p style="font-size: 12px; color: #7f8c8d; margin: 5px 0 10px 0;">Hold Ctrl/Cmd to select multiple images</p>
-                    <select name="existing_images[]" multiple style="width: 100%; height: 120px;">
-                        {{range .Images}}
-                        <option value="{{.ID}}">{{if .Filename}}{{.Filename}}{{else}}{{.URL}}{{end}}</option>
-                        {{end}}
-                    </select>
-                </div>
-                {{end}}
-
                 <div>
-                    <label>Or upload new images:</label>
+                    <label>Upload new images:</label>
                     <input type="file" name="product_images" accept="image/*" multiple style="width: 100%; margin-bottom: 10px;">
                     <div style="margin-bottom: 10px;">
                         <label style="font-size: 12px;">Alt text for new images (optional):</label>
@@ -120,6 +107,84 @@
                 </div>
             </div>
         </div>
+
+        <script>
+        // Drag and drop functionality for image reordering
+        const imagesGrid = document.getElementById('images-grid');
+        if (imagesGrid) {
+            let draggedItem = null;
+
+            imagesGrid.addEventListener('dragstart', function(e) {
+                if (e.target.classList.contains('image-item')) {
+                    draggedItem = e.target;
+                    e.target.style.opacity = '0.5';
+                }
+            });
+
+            imagesGrid.addEventListener('dragend', function(e) {
+                if (e.target.classList.contains('image-item')) {
+                    e.target.style.opacity = '1';
+                }
+            });
+
+            imagesGrid.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                const afterElement = getDragAfterElement(imagesGrid, e.clientX, e.clientY);
+                if (afterElement == null) {
+                    imagesGrid.appendChild(draggedItem);
+                } else {
+                    imagesGrid.insertBefore(draggedItem, afterElement);
+                }
+            });
+
+            imagesGrid.addEventListener('drop', function(e) {
+                e.preventDefault();
+                // Save new order to server
+                saveImageOrder();
+            });
+
+            function getDragAfterElement(container, x, y) {
+                const draggableElements = [...container.querySelectorAll('.image-item:not(.dragging)')];
+
+                return draggableElements.reduce((closest, child) => {
+                    const box = child.getBoundingClientRect();
+                    const offsetX = x - box.left - box.width / 2;
+                    const offsetY = y - box.top - box.height / 2;
+                    const offset = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+
+                    if (offset < 0 && offset > closest.offset) {
+                        return { offset: offset, element: child };
+                    } else {
+                        return closest;
+                    }
+                }, { offset: Number.NEGATIVE_INFINITY }).element;
+            }
+
+            function saveImageOrder() {
+                const imageItems = imagesGrid.querySelectorAll('.image-item');
+                const imageIds = Array.from(imageItems).map(item => parseInt(item.dataset.id));
+
+                // Send AJAX request to save new order
+                fetch('/site/{{.Website.ID}}/products/{{if .Product}}{{.Product.ID}}{{end}}/images/reorder', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ imageIds: imageIds })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.success) {
+                        alert('Failed to save image order: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error saving image order:', error);
+                    alert('Failed to save image order');
+                });
+            }
+        }
+        </script>
 
         <button type="submit" class="btn">Save Product</button>
         <a href="/site/{{.Website.ID}}/products" class="btn" style="background: #6c757d; margin-left: 10px;">Cancel</a>

@@ -159,6 +159,7 @@ type Order struct {
 	OrderNumber          string      `json:"order_number"`
 	CustomerEmail        string      `json:"customer_email"`
 	CustomerName         string      `json:"customer_name"`
+	CustomerID           *int        `json:"customer_id"` // Pointer to handle NULL for old orders
 	ShippingAddressLine1 string      `json:"shipping_address_line1"`
 	ShippingAddressLine2 string      `json:"shipping_address_line2"`
 	ShippingCity         string      `json:"shipping_city"`
@@ -192,6 +193,22 @@ type OrderItem struct {
 	Quantity     int     `json:"quantity"`
 	Price        float64 `json:"price"`
 	Total        float64 `json:"total"`
+}
+
+type Customer struct {
+	ID               int        `json:"id"`
+	Email            string     `json:"email"`
+	StripeCustomerID string     `json:"stripe_customer_id"`
+	FirstName        string     `json:"first_name"`
+	LastName         string     `json:"last_name"`
+	Phone            string     `json:"phone"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	// Aggregate fields (populated for list/detail views)
+	OrderCount int        `json:"order_count"`
+	TotalSpent float64    `json:"total_spent"`
+	FirstOrder *time.Time `json:"first_order_date"`
+	LastOrder  *time.Time `json:"last_order_date"`
 }
 
 type ParserOptions struct {

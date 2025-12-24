@@ -9,6 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/murdinc/stencil2/configs"
+	"github.com/murdinc/stencil2/shippo"
 )
 
 // Website represents a managed website
@@ -20,8 +23,39 @@ type Website struct {
 	HTTPAddress   string    `json:"httpAddress"`
 	MediaProxyURL string    `json:"mediaProxyUrl"`
 	APIVersion    int       `json:"apiVersion"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+
+	// Stripe
+	StripePublishableKey string `json:"stripePublishableKey"`
+	StripeSecretKey      string `json:"stripeSecretKey"`
+
+	// Shippo
+	ShippoAPIKey  string `json:"shippoApiKey"`
+	LabelFormat   string `json:"labelFormat"` // PDF, PDF_4x6, ZPLII, PNG
+
+	// Email
+	EmailFromAddress string `json:"emailFromAddress"`
+	EmailFromName    string `json:"emailFromName"`
+	EmailReplyTo     string `json:"emailReplyTo"`
+
+	// Ecommerce
+	TaxRate      float64 `json:"taxRate"`
+	ShippingCost float64 `json:"shippingCost"`
+
+	// Early Access
+	EarlyAccessEnabled  bool   `json:"earlyAccessEnabled"`
+	EarlyAccessPassword string `json:"earlyAccessPassword"`
+
+	// ShipFrom Address
+	ShipFromName    string `json:"shipFromName"`
+	ShipFromStreet1 string `json:"shipFromStreet1"`
+	ShipFromStreet2 string `json:"shipFromStreet2"`
+	ShipFromCity    string `json:"shipFromCity"`
+	ShipFromState   string `json:"shipFromState"`
+	ShipFromZip     string `json:"shipFromZip"`
+	ShipFromCountry string `json:"shipFromCountry"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Article represents an article/post
@@ -114,6 +148,10 @@ type Order struct {
 	PaymentStatus        string    `json:"paymentStatus"`
 	FulfillmentStatus    string    `json:"fulfillmentStatus"`
 	PaymentMethod        string    `json:"paymentMethod"`
+	ShippingLabelCost    *float64  `json:"shippingLabelCost"`
+	TrackingNumber       string    `json:"trackingNumber"`
+	ShippingCarrier      string    `json:"shippingCarrier"`
+	ShippingLabelURL     string    `json:"shippingLabelUrl"`
 	Items                []OrderItem `json:"items"`
 	CreatedAt            time.Time `json:"createdAt"`
 	UpdatedAt            time.Time `json:"updatedAt"`
@@ -130,11 +168,49 @@ type OrderItem struct {
 	Total        float64 `json:"total"`
 }
 
+// ProductImageData represents a product-specific image (not shared with articles)
+type ProductImageData struct {
+	ID        int       `json:"id"`
+	ProductID int       `json:"productId"`
+	URL       string    `json:"url"`
+	Filename  string    `json:"filename"`
+	Filepath  string    `json:"filepath"`
+	AltText   string    `json:"altText"`
+	Credit    string    `json:"credit"`
+	Size      int64     `json:"size"`
+	Width     int       `json:"width"`
+	Height    int       `json:"height"`
+	Position  int       `json:"position"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 // OrderFilters represents filters for order queries
 type OrderFilters struct {
 	PaymentStatus     string
 	FulfillmentStatus string
 	Sort              string
+}
+
+// CustomerFilters represents filters for customer queries
+type CustomerFilters struct {
+	Sort string // total_desc, total_asc, orders_desc, date_desc, date_asc
+}
+
+// Customer represents a customer with aggregate statistics
+type Customer struct {
+	ID               int        `json:"id"`
+	Email            string     `json:"email"`
+	StripeCustomerID string     `json:"stripeCustomerId"`
+	FirstName        string     `json:"firstName"`
+	LastName         string     `json:"lastName"`
+	Phone            string     `json:"phone"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	UpdatedAt        time.Time  `json:"updatedAt"`
+	// Aggregate fields
+	OrderCount int        `json:"orderCount"`
+	TotalSpent float64    `json:"totalSpent"`
+	FirstOrder *time.Time `json:"firstOrderDate"`
+	LastOrder  *time.Time `json:"lastOrderDate"`
 }
 
 // GetAllWebsites retrieves all websites from disk
@@ -171,6 +247,36 @@ func (s *AdminServer) GetAllWebsites() ([]Website, error) {
 				HTTP          struct {
 					Address string `json:"address"`
 				} `json:"http"`
+				Stripe struct {
+					PublishableKey string `json:"publishableKey"`
+					SecretKey      string `json:"secretKey"`
+				} `json:"stripe"`
+				Shippo struct {
+					APIKey      string `json:"apiKey"`
+					LabelFormat string `json:"labelFormat"`
+				} `json:"shippo"`
+				Email struct {
+					FromAddress string `json:"fromAddress"`
+					FromName    string `json:"fromName"`
+					ReplyTo     string `json:"replyTo"`
+				} `json:"email"`
+				Ecommerce struct {
+					TaxRate      float64 `json:"taxRate"`
+					ShippingCost float64 `json:"shippingCost"`
+				} `json:"ecommerce"`
+				EarlyAccess struct {
+					Enabled  bool   `json:"enabled"`
+					Password string `json:"password"`
+				} `json:"earlyAccess"`
+				ShipFrom struct {
+					Name    string `json:"name"`
+					Street1 string `json:"street1"`
+					Street2 string `json:"street2"`
+					City    string `json:"city"`
+					State   string `json:"state"`
+					Zip     string `json:"zip"`
+					Country string `json:"country"`
+				} `json:"shipFrom"`
 			}
 
 			if err := json.Unmarshal(data, &config); err != nil {
@@ -189,6 +295,30 @@ func (s *AdminServer) GetAllWebsites() ([]Website, error) {
 				HTTPAddress:   config.HTTP.Address,
 				MediaProxyURL: config.MediaProxyURL,
 				APIVersion:    config.APIVersion,
+
+				StripePublishableKey: config.Stripe.PublishableKey,
+				StripeSecretKey:      config.Stripe.SecretKey,
+
+				ShippoAPIKey: config.Shippo.APIKey,
+				LabelFormat:  config.Shippo.LabelFormat,
+
+				EmailFromAddress: config.Email.FromAddress,
+				EmailFromName:    config.Email.FromName,
+				EmailReplyTo:     config.Email.ReplyTo,
+
+				TaxRate:      config.Ecommerce.TaxRate,
+				ShippingCost: config.Ecommerce.ShippingCost,
+
+				EarlyAccessEnabled:  config.EarlyAccess.Enabled,
+				EarlyAccessPassword: config.EarlyAccess.Password,
+
+				ShipFromName:    config.ShipFrom.Name,
+				ShipFromStreet1: config.ShipFrom.Street1,
+				ShipFromStreet2: config.ShipFrom.Street2,
+				ShipFromCity:    config.ShipFrom.City,
+				ShipFromState:   config.ShipFrom.State,
+				ShipFromZip:     config.ShipFrom.Zip,
+				ShipFromCountry: config.ShipFrom.Country,
 			}
 
 			websites = append(websites, website)
@@ -271,6 +401,56 @@ func (s *AdminServer) UpdateWebsite(w Website) error {
 	if w.MediaProxyURL != "" {
 		config["mediaProxyUrl"] = w.MediaProxyURL
 	}
+
+	// Stripe
+	if config["stripe"] == nil {
+		config["stripe"] = make(map[string]interface{})
+	}
+	config["stripe"].(map[string]interface{})["publishableKey"] = w.StripePublishableKey
+	config["stripe"].(map[string]interface{})["secretKey"] = w.StripeSecretKey
+
+	// Shippo
+	if config["shippo"] == nil {
+		config["shippo"] = make(map[string]interface{})
+	}
+	config["shippo"].(map[string]interface{})["apiKey"] = w.ShippoAPIKey
+	if w.LabelFormat != "" {
+		config["shippo"].(map[string]interface{})["labelFormat"] = w.LabelFormat
+	}
+
+	// Email
+	if config["email"] == nil {
+		config["email"] = make(map[string]interface{})
+	}
+	config["email"].(map[string]interface{})["fromAddress"] = w.EmailFromAddress
+	config["email"].(map[string]interface{})["fromName"] = w.EmailFromName
+	config["email"].(map[string]interface{})["replyTo"] = w.EmailReplyTo
+
+	// Ecommerce
+	if config["ecommerce"] == nil {
+		config["ecommerce"] = make(map[string]interface{})
+	}
+	config["ecommerce"].(map[string]interface{})["taxRate"] = w.TaxRate
+	config["ecommerce"].(map[string]interface{})["shippingCost"] = w.ShippingCost
+
+	// Early Access
+	if config["earlyAccess"] == nil {
+		config["earlyAccess"] = make(map[string]interface{})
+	}
+	config["earlyAccess"].(map[string]interface{})["enabled"] = w.EarlyAccessEnabled
+	config["earlyAccess"].(map[string]interface{})["password"] = w.EarlyAccessPassword
+
+	// ShipFrom
+	if config["shipFrom"] == nil {
+		config["shipFrom"] = make(map[string]interface{})
+	}
+	config["shipFrom"].(map[string]interface{})["name"] = w.ShipFromName
+	config["shipFrom"].(map[string]interface{})["street1"] = w.ShipFromStreet1
+	config["shipFrom"].(map[string]interface{})["street2"] = w.ShipFromStreet2
+	config["shipFrom"].(map[string]interface{})["city"] = w.ShipFromCity
+	config["shipFrom"].(map[string]interface{})["state"] = w.ShipFromState
+	config["shipFrom"].(map[string]interface{})["zip"] = w.ShipFromZip
+	config["shipFrom"].(map[string]interface{})["country"] = w.ShipFromCountry
 
 	// Write back to disk
 	updatedData, err := json.MarshalIndent(config, "", "\t")
@@ -1021,100 +1201,6 @@ type ProductImage struct {
 	Image    Image  `json:"image"`
 }
 
-// GetProductImages retrieves all images for a product
-func (s *AdminServer) GetProductImages(websiteID string, productID int) ([]ProductImage, error) {
-	db, err := s.GetWebsiteConnection(websiteID)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
-	query := `
-		SELECT pi.id, pi.image_id, pi.position,
-		       i.id, i.url, i.alt_text, i.credit, i.filename, i.size
-		FROM product_images pi
-		JOIN images_unified i ON pi.image_id = i.id
-		WHERE pi.product_id = ?
-		ORDER BY pi.position ASC
-	`
-
-	rows, err := db.Query(query, productID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var images []ProductImage
-	for rows.Next() {
-		var pi ProductImage
-		var altText, credit, filename sql.NullString
-		var size sql.NullInt64
-		err := rows.Scan(&pi.ID, &pi.ImageID, &pi.Position,
-			&pi.Image.ID, &pi.Image.URL, &altText, &credit, &filename, &size)
-		if err != nil {
-			return nil, err
-		}
-		if altText.Valid {
-			pi.Image.AltText = altText.String
-		}
-		if credit.Valid {
-			pi.Image.Credit = credit.String
-		}
-		if filename.Valid {
-			pi.Image.Filename = filename.String
-		}
-		if size.Valid {
-			pi.Image.Size = size.Int64
-		}
-		images = append(images, pi)
-	}
-
-	return images, nil
-}
-
-// AddProductImage adds an image to a product
-func (s *AdminServer) AddProductImage(websiteID string, productID, imageID, position int) (int64, error) {
-	db, err := s.GetWebsiteConnection(websiteID)
-	if err != nil {
-		return 0, err
-	}
-	defer db.Close()
-
-	query := `INSERT INTO product_images (product_id, image_id, position) VALUES (?, ?, ?)`
-	result, err := db.Exec(query, productID, imageID, position)
-	if err != nil {
-		return 0, err
-	}
-
-	return result.LastInsertId()
-}
-
-// RemoveProductImage removes an image from a product
-func (s *AdminServer) RemoveProductImage(websiteID string, productImageID int) error {
-	db, err := s.GetWebsiteConnection(websiteID)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	query := `DELETE FROM product_images WHERE id = ?`
-	_, err = db.Exec(query, productImageID)
-	return err
-}
-
-// ClearProductImages removes all images from a product
-func (s *AdminServer) ClearProductImages(websiteID string, productID int) error {
-	db, err := s.GetWebsiteConnection(websiteID)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	query := `DELETE FROM product_images WHERE product_id = ?`
-	_, err = db.Exec(query, productID)
-	return err
-}
-
 // ====================
 // Product-Collection Relationships
 // ====================
@@ -1540,4 +1626,462 @@ func (s *AdminServer) UpdateOrderFulfillmentStatus(websiteID string, orderID int
 	query := `UPDATE orders SET fulfillment_status = ?, updated_at = NOW() WHERE id = ?`
 	_, err = db.Exec(query, status, orderID)
 	return err
+}
+
+// LabelInfo contains information about a purchased shipping label
+type LabelInfo struct {
+	TrackingNumber string  `json:"trackingNumber"`
+	LabelURL       string  `json:"labelUrl"`
+	Carrier        string  `json:"carrier"`
+	Cost           float64 `json:"cost"`
+}
+
+// GetShippingRates gets shipping rates from Shippo for an order
+func (s *AdminServer) GetShippingRates(websiteID string, order Order, length, width, height, weight float64) ([]shippo.Rate, error) {
+	// Get website config
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load website config to get ship-from address
+	configPath := filepath.Join("websites", website.Directory, "config-dev.json")
+	configData, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read website config: %w", err)
+	}
+
+	var siteConfig configs.WebsiteConfig
+	if err := json.Unmarshal(configData, &siteConfig); err != nil {
+		return nil, fmt.Errorf("failed to parse website config: %w", err)
+	}
+
+	// Get Shippo API key from site config
+	shippoKey := siteConfig.Shippo.APIKey
+
+	// Create Shippo client
+	client := shippo.NewClient(shippoKey)
+
+	// Build addresses
+	fromAddress := shippo.Address{
+		Name:    siteConfig.ShipFrom.Name,
+		Street1: siteConfig.ShipFrom.Street1,
+		Street2: siteConfig.ShipFrom.Street2,
+		City:    siteConfig.ShipFrom.City,
+		State:   siteConfig.ShipFrom.State,
+		Zip:     siteConfig.ShipFrom.Zip,
+		Country: siteConfig.ShipFrom.Country,
+	}
+
+	toAddress := shippo.Address{
+		Name:    order.CustomerName,
+		Street1: order.ShippingAddressLine1,
+		Street2: order.ShippingAddressLine2,
+		City:    order.ShippingCity,
+		State:   order.ShippingState,
+		Zip:     order.ShippingZip,
+		Country: order.ShippingCountry,
+		Email:   order.CustomerEmail,
+	}
+
+	parcel := shippo.Parcel{
+		Length:       fmt.Sprintf("%.2f", length),
+		Width:        fmt.Sprintf("%.2f", width),
+		Height:       fmt.Sprintf("%.2f", height),
+		DistanceUnit: "in",
+		Weight:       fmt.Sprintf("%.2f", weight),
+		MassUnit:     "lb",
+	}
+
+	// Get rates from Shippo
+	shipmentResp, err := client.GetRates(fromAddress, toAddress, parcel)
+	if err != nil {
+		return nil, err
+	}
+
+	return shipmentResp.Rates, nil
+}
+
+// PurchaseShippingLabel purchases a shipping label from Shippo and updates the order
+func (s *AdminServer) PurchaseShippingLabel(websiteID string, orderID int, rateID string) (*LabelInfo, error) {
+	// Get website config for site-specific Shippo key
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get Shippo API key from site config
+	shippoKey := website.ShippoAPIKey
+
+	// Get label format - use site-specific if available, otherwise default to PDF
+	labelFormat := "PDF"
+	if website.LabelFormat != "" {
+		labelFormat = website.LabelFormat
+	}
+
+	// Create Shippo client
+	client := shippo.NewClient(shippoKey)
+
+	// Purchase label
+	transaction, err := client.PurchaseLabel(rateID, labelFormat)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract cost from rate amount
+	cost := 0.0
+	fmt.Sscanf(transaction.Rate, "%f", &cost)
+
+	// Update order in database with label information
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	// Determine carrier from transaction
+	carrier := "USPS" // Default, would need to parse from rate details
+
+	query := `
+		UPDATE orders
+		SET tracking_number = ?,
+		    shipping_carrier = ?,
+		    shipping_label_url = ?,
+		    shipping_label_cost = ?,
+		    updated_at = NOW()
+		WHERE id = ?
+	`
+
+	_, err = db.Exec(query, transaction.TrackingNumber, carrier, transaction.LabelURL, cost, orderID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LabelInfo{
+		TrackingNumber: transaction.TrackingNumber,
+		LabelURL:       transaction.LabelURL,
+		Carrier:        carrier,
+		Cost:           cost,
+	}, nil
+}
+
+// GetProductImagesData retrieves all images for a product from product_images_data
+func (s *AdminServer) GetProductImagesData(websiteID string, productID int) ([]ProductImageData, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT id, product_id, url, filename, filepath, alt_text, credit, size, width, height, position, created_at
+		FROM product_images_data
+		WHERE product_id = ?
+		ORDER BY position ASC
+	`
+
+	rows, err := db.Query(query, productID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var images []ProductImageData
+	for rows.Next() {
+		var img ProductImageData
+		var altText, credit sql.NullString
+		var size sql.NullInt64
+		var width, height sql.NullInt64
+
+		err := rows.Scan(&img.ID, &img.ProductID, &img.URL, &img.Filename, &img.Filepath,
+			&altText, &credit, &size, &width, &height, &img.Position, &img.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		if altText.Valid {
+			img.AltText = altText.String
+		}
+		if credit.Valid {
+			img.Credit = credit.String
+		}
+		if size.Valid {
+			img.Size = size.Int64
+		}
+		if width.Valid {
+			img.Width = int(width.Int64)
+		}
+		if height.Valid {
+			img.Height = int(height.Int64)
+		}
+
+		images = append(images, img)
+	}
+
+	return images, nil
+}
+
+// AddProductImageData adds a new image directly to a product
+func (s *AdminServer) AddProductImageData(websiteID string, img ProductImageData) (int64, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	query := `INSERT INTO product_images_data (product_id, url, filename, filepath, alt_text, credit, size, width, height, position)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	result, err := db.Exec(query, img.ProductID, img.URL, img.Filename, img.Filepath,
+		img.AltText, img.Credit, img.Size, img.Width, img.Height, img.Position)
+	if err != nil {
+		return 0, err
+	}
+
+	return result.LastInsertId()
+}
+
+// DeleteProductImageData deletes an image and its file from disk
+func (s *AdminServer) DeleteProductImageData(websiteID string, imageID int) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	// First get the filepath
+	var filepath string
+	err = db.QueryRow("SELECT filepath FROM product_images_data WHERE id = ?", imageID).Scan(&filepath)
+	if err != nil {
+		return err
+	}
+
+	// Delete from database
+	_, err = db.Exec("DELETE FROM product_images_data WHERE id = ?", imageID)
+	if err != nil {
+		return err
+	}
+
+	// Delete file from disk
+	if err := os.Remove(filepath); err != nil {
+		log.Printf("Warning: Failed to delete image file %s: %v", filepath, err)
+		// Don't fail the operation if file doesn't exist
+	}
+
+	return nil
+}
+
+// UpdateProductImagePositions updates the position values for reordering
+func (s *AdminServer) UpdateProductImagePositions(websiteID string, imageIDs []int) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare("UPDATE product_images_data SET position = ? WHERE id = ?")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for position, imageID := range imageIDs {
+		_, err = stmt.Exec(position, imageID)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// ====================
+// Customer Management
+// ====================
+
+// GetCustomers retrieves all customers with aggregate statistics
+func (s *AdminServer) GetCustomers(websiteID string, filters CustomerFilters) ([]Customer, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			c.id, c.email, c.stripe_customer_id, c.first_name, c.last_name, c.phone,
+			c.created_at, c.updated_at,
+			COUNT(CASE WHEN o.payment_status = 'paid' THEN 1 END) as order_count,
+			COALESCE(SUM(CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END), 0) as total_spent,
+			MIN(CASE WHEN o.payment_status = 'paid' THEN o.created_at END) as first_order,
+			MAX(CASE WHEN o.payment_status = 'paid' THEN o.created_at END) as last_order
+		FROM customers c
+		LEFT JOIN orders o ON c.id = o.customer_id
+		GROUP BY c.id, c.email, c.stripe_customer_id, c.first_name, c.last_name, c.phone, c.created_at, c.updated_at
+	`
+
+	// Add sorting
+	switch filters.Sort {
+	case "total_desc":
+		query += " ORDER BY total_spent DESC"
+	case "total_asc":
+		query += " ORDER BY total_spent ASC"
+	case "orders_desc":
+		query += " ORDER BY order_count DESC"
+	case "date_asc":
+		query += " ORDER BY c.created_at ASC"
+	case "date_desc":
+		query += " ORDER BY c.created_at DESC"
+	default: // Default to total spent descending
+		query += " ORDER BY total_spent DESC"
+	}
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var customers []Customer
+	for rows.Next() {
+		var c Customer
+		var stripeCustomerID, phone sql.NullString
+		var firstOrder, lastOrder sql.NullTime
+
+		err := rows.Scan(
+			&c.ID, &c.Email, &stripeCustomerID, &c.FirstName, &c.LastName, &phone,
+			&c.CreatedAt, &c.UpdatedAt,
+			&c.OrderCount, &c.TotalSpent, &firstOrder, &lastOrder,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if stripeCustomerID.Valid {
+			c.StripeCustomerID = stripeCustomerID.String
+		}
+		if phone.Valid {
+			c.Phone = phone.String
+		}
+		if firstOrder.Valid {
+			c.FirstOrder = &firstOrder.Time
+		}
+		if lastOrder.Valid {
+			c.LastOrder = &lastOrder.Time
+		}
+
+		customers = append(customers, c)
+	}
+
+	return customers, nil
+}
+
+// GetCustomer retrieves a single customer with statistics
+func (s *AdminServer) GetCustomer(websiteID string, customerID int) (Customer, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return Customer{}, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			c.id, c.email, c.stripe_customer_id, c.first_name, c.last_name, c.phone,
+			c.created_at, c.updated_at,
+			COUNT(CASE WHEN o.payment_status = 'paid' THEN 1 END) as order_count,
+			COALESCE(SUM(CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END), 0) as total_spent,
+			MIN(CASE WHEN o.payment_status = 'paid' THEN o.created_at END) as first_order,
+			MAX(CASE WHEN o.payment_status = 'paid' THEN o.created_at END) as last_order
+		FROM customers c
+		LEFT JOIN orders o ON c.id = o.customer_id
+		WHERE c.id = ?
+		GROUP BY c.id, c.email, c.stripe_customer_id, c.first_name, c.last_name, c.phone, c.created_at, c.updated_at
+	`
+
+	var c Customer
+	var stripeCustomerID, phone sql.NullString
+	var firstOrder, lastOrder sql.NullTime
+
+	err = db.QueryRow(query, customerID).Scan(
+		&c.ID, &c.Email, &stripeCustomerID, &c.FirstName, &c.LastName, &phone,
+		&c.CreatedAt, &c.UpdatedAt,
+		&c.OrderCount, &c.TotalSpent, &firstOrder, &lastOrder,
+	)
+	if err != nil {
+		return Customer{}, err
+	}
+
+	if stripeCustomerID.Valid {
+		c.StripeCustomerID = stripeCustomerID.String
+	}
+	if phone.Valid {
+		c.Phone = phone.String
+	}
+	if firstOrder.Valid {
+		c.FirstOrder = &firstOrder.Time
+	}
+	if lastOrder.Valid {
+		c.LastOrder = &lastOrder.Time
+	}
+
+	return c, nil
+}
+
+// GetCustomerOrders retrieves all orders for a specific customer
+func (s *AdminServer) GetCustomerOrders(websiteID string, customerID int) ([]Order, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			id, order_number, customer_email, customer_name,
+			shipping_address_line1, shipping_address_line2,
+			shipping_city, shipping_state, shipping_zip, shipping_country,
+			subtotal, tax, shipping_cost, total,
+			payment_status, fulfillment_status, payment_method,
+			created_at, updated_at
+		FROM orders
+		WHERE customer_id = ?
+		ORDER BY created_at DESC
+	`
+
+	rows, err := db.Query(query, customerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []Order
+	for rows.Next() {
+		var o Order
+		var shippingLine2, paymentMethod sql.NullString
+
+		err := rows.Scan(
+			&o.ID, &o.OrderNumber, &o.CustomerEmail, &o.CustomerName,
+			&o.ShippingAddressLine1, &shippingLine2,
+			&o.ShippingCity, &o.ShippingState, &o.ShippingZip, &o.ShippingCountry,
+			&o.Subtotal, &o.Tax, &o.ShippingCost, &o.Total,
+			&o.PaymentStatus, &o.FulfillmentStatus, &paymentMethod,
+			&o.CreatedAt, &o.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		o.ShippingAddressLine2 = shippingLine2.String
+		o.PaymentMethod = paymentMethod.String
+
+		orders = append(orders, o)
+	}
+
+	return orders, nil
 }

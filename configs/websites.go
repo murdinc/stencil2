@@ -23,6 +23,10 @@ type WebsiteConfig struct {
 		PublishableKey string `json:"publishableKey"`
 		SecretKey      string `json:"secretKey"`
 	} `json:"stripe"`
+	Shippo struct {
+		APIKey      string `json:"apiKey"`
+		LabelFormat string `json:"labelFormat"` // PDF, PDF_4x6, ZPLII, PNG
+	} `json:"shippo"`
 	Email struct {
 		FromAddress string `json:"fromAddress"`
 		FromName    string `json:"fromName"`
@@ -32,6 +36,19 @@ type WebsiteConfig struct {
 		TaxRate      float64 `json:"taxRate"`      // e.g., 0.08 for 8%
 		ShippingCost float64 `json:"shippingCost"` // flat rate shipping cost
 	} `json:"ecommerce"`
+	EarlyAccess struct {
+		Enabled  bool   `json:"enabled"`
+		Password string `json:"password"`
+	} `json:"earlyAccess"`
+	ShipFrom struct {
+		Name    string `json:"name"`
+		Street1 string `json:"street1"`
+		Street2 string `json:"street2"`
+		City    string `json:"city"`
+		State   string `json:"state"`
+		Zip     string `json:"zip"`
+		Country string `json:"country"`
+	} `json:"shipFrom"`
 	Directory string
 }
 

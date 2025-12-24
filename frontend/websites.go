@@ -8,11 +8,18 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/murdinc/stencil2/api"
 	"github.com/murdinc/stencil2/configs"
 	"github.com/murdinc/stencil2/database"
+)
+
+// Global registry of websites for live configuration updates
+var (
+	websiteRegistry = make(map[string]*Website)
+	registryMutex   sync.RWMutex
 )
 
 // Website represents an individual site
@@ -93,7 +100,57 @@ func NewWebsite(envConfig configs.EnvironmentConfig, websiteConfig configs.Websi
 		log.Fatalf("Error generating hash of public directory %v", err)
 	}
 
+	// Register website in global registry
+	RegisterWebsite(websiteConfig.Database.Name, website)
+
 	return website, nil
+}
+
+// RegisterWebsite adds a website to the global registry
+func RegisterWebsite(dbName string, website *Website) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+	websiteRegistry[dbName] = website
+}
+
+// GetWebsite retrieves a website from the global registry
+func GetWebsite(dbName string) (*Website, bool) {
+	registryMutex.RLock()
+	defer registryMutex.RUnlock()
+	website, exists := websiteRegistry[dbName]
+	return website, exists
+}
+
+// ReloadConfig reloads the website configuration from disk
+func (website *Website) ReloadConfig(prodMode bool) error {
+	// Read the fresh config from disk
+	websiteConfigs, err := configs.ReadWebsiteConfigs(prodMode)
+	if err != nil {
+		return fmt.Errorf("failed to read website configs: %v", err)
+	}
+
+	// Find this website's config
+	var newConfig configs.WebsiteConfig
+	found := false
+	for _, cfg := range websiteConfigs {
+		if cfg.Database.Name == website.WebsiteConfig.Database.Name {
+			newConfig = cfg
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("website config not found for database: %s", website.WebsiteConfig.Database.Name)
+	}
+
+	// Update the website's configuration
+	registryMutex.Lock()
+	website.WebsiteConfig = &newConfig
+	registryMutex.Unlock()
+
+	log.Printf("Reloaded configuration for website: %s", newConfig.SiteName)
+	return nil
 }
 
 func MD5All(root string) (string, error) {

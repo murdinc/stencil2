@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/murdinc/stencil2/structs"
@@ -16,6 +17,20 @@ func (db *DBConnection) InitEcommerceTables() error {
 	}
 
 	schemas := []string{
+		// Customers table (must be first for foreign key references)
+		`CREATE TABLE IF NOT EXISTS customers (
+			id INT PRIMARY KEY AUTO_INCREMENT,
+			email VARCHAR(255) NOT NULL UNIQUE,
+			stripe_customer_id VARCHAR(255) UNIQUE DEFAULT NULL,
+			first_name VARCHAR(100) NOT NULL,
+			last_name VARCHAR(100) NOT NULL,
+			phone VARCHAR(50) DEFAULT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			INDEX idx_email (email),
+			INDEX idx_stripe_customer_id (stripe_customer_id)
+		)`,
+
 		// Products table
 		`CREATE TABLE IF NOT EXISTS products_unified (
 			id INT PRIMARY KEY AUTO_INCREMENT,
@@ -65,13 +80,21 @@ func (db *DBConnection) InitEcommerceTables() error {
 			INDEX idx_position (position)
 		)`,
 
-		// Product Images
-		`CREATE TABLE IF NOT EXISTS product_images (
+		// Product Images Data (dedicated table for product images)
+		`CREATE TABLE IF NOT EXISTS product_images_data (
 			id INT PRIMARY KEY AUTO_INCREMENT,
 			product_id INT NOT NULL,
-			image_id INT NOT NULL,
-			position INT DEFAULT 0,
+			url VARCHAR(500) NOT NULL,
+			filename VARCHAR(255) NOT NULL,
+			filepath VARCHAR(500) NOT NULL,
 			alt_text VARCHAR(255),
+			credit VARCHAR(255),
+			size BIGINT,
+			width INT,
+			height INT,
+			position INT DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (product_id) REFERENCES products_unified(id) ON DELETE CASCADE,
 			INDEX idx_product_id (product_id),
 			INDEX idx_position (position)
 		)`,
@@ -119,6 +142,7 @@ func (db *DBConnection) InitEcommerceTables() error {
 			order_number VARCHAR(50) UNIQUE NOT NULL,
 			customer_email VARCHAR(255) NOT NULL,
 			customer_name VARCHAR(255) NOT NULL,
+			customer_id INT DEFAULT NULL,
 			shipping_address_line1 VARCHAR(255),
 			shipping_address_line2 VARCHAR(255),
 			shipping_city VARCHAR(100),
@@ -138,12 +162,18 @@ func (db *DBConnection) InitEcommerceTables() error {
 			fulfillment_status VARCHAR(50) DEFAULT 'unfulfilled',
 			payment_method VARCHAR(50),
 			stripe_payment_intent_id VARCHAR(255),
+			shipping_label_cost DECIMAL(10, 2) DEFAULT NULL,
+			tracking_number VARCHAR(100) DEFAULT NULL,
+			shipping_carrier VARCHAR(50) DEFAULT NULL,
+			shipping_label_url VARCHAR(500) DEFAULT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 			INDEX idx_order_number (order_number),
 			INDEX idx_customer_email (customer_email),
+			INDEX idx_customer_id (customer_id),
 			INDEX idx_payment_status (payment_status),
-			INDEX idx_created_at (created_at)
+			INDEX idx_created_at (created_at),
+			FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
 		)`,
 
 		// Order Items
@@ -496,12 +526,10 @@ func (db *DBConnection) GetCollectionProducts(collectionSlug string, vars map[st
 func (db *DBConnection) getProductImages(productID int) ([]structs.ProductImage, error) {
 	sqlQuery := `
 		SELECT
-			pi.id, pi.position,
-			i.id, i.url, i.alt_text, i.credit
-		FROM product_images pi
-		JOIN images_unified i ON pi.image_id = i.id
-		WHERE pi.product_id = ?
-		ORDER BY pi.position ASC
+			id, url, alt_text, credit, position
+		FROM product_images_data
+		WHERE product_id = ?
+		ORDER BY position ASC
 	`
 
 	rows, err := db.QueryRows(sqlQuery, productID)
@@ -513,12 +541,18 @@ func (db *DBConnection) getProductImages(productID int) ([]structs.ProductImage,
 	var images []structs.ProductImage
 	for rows.Next() {
 		var img structs.ProductImage
+		var altText, credit sql.NullString
 		err := rows.Scan(
-			&img.ID, &img.Position,
-			&img.Image.ID, &img.Image.URL, &img.Image.AltText, &img.Image.Credit,
+			&img.ID, &img.Image.URL, &altText, &credit, &img.Position,
 		)
 		if err != nil {
 			return nil, err
+		}
+		if altText.Valid {
+			img.Image.AltText = altText.String
+		}
+		if credit.Valid {
+			img.Image.Credit = credit.String
 		}
 		images = append(images, img)
 	}
@@ -776,6 +810,14 @@ func (db *DBConnection) CreateOrder(orderData map[string]interface{}) (structs.O
 	lastName := shippingAddr["last_name"].(string)
 	customerName := firstName + " " + lastName
 
+	// Get or create customer record
+	customer, err := db.GetOrCreateCustomer(customerEmail, firstName, lastName)
+	if err != nil {
+		// Log error but don't fail order creation - backwards compatibility
+		// Customer tracking is supplementary feature
+		log.Printf("Warning: failed to create/get customer: %v\n", err)
+	}
+
 	// Extract payment information (if provided)
 	paymentIntentID := ""
 	if val, ok := orderData["payment_intent_id"].(string); ok {
@@ -817,18 +859,24 @@ func (db *DBConnection) CreateOrder(orderData map[string]interface{}) (structs.O
 	zip := shippingAddr["zip"].(string)
 	country := shippingAddr["country"].(string)
 
+	// Prepare customer ID for insertion (NULL if customer creation failed)
+	var customerID interface{} = nil
+	if customer.ID > 0 {
+		customerID = customer.ID
+	}
+
 	// Insert order
 	sqlQuery := `
 		INSERT INTO orders (
-			order_number, customer_email, customer_name,
+			order_number, customer_email, customer_name, customer_id,
 			shipping_address_line1, shipping_address_line2, shipping_city, shipping_state, shipping_zip, shipping_country,
 			subtotal, tax, shipping_cost, total,
 			payment_status, fulfillment_status, stripe_payment_intent_id, payment_method, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unfulfilled', ?, 'card', NOW(), NOW())
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unfulfilled', ?, 'card', NOW(), NOW())
 	`
 
 	result, err := db.ExecuteQuery(sqlQuery,
-		orderNumber, customerEmail, customerName,
+		orderNumber, customerEmail, customerName, customerID,
 		address1, address2, city, state, zip, country,
 		subtotal, tax, shippingCost, total,
 		paymentStatus, paymentIntentID,
@@ -1035,4 +1083,102 @@ func (db *DBConnection) GetOrderByPaymentIntentID(paymentIntentID string) (struc
 	}
 
 	return order, nil
+}
+
+// GetOrCreateCustomer finds an existing customer by email or creates a new one
+// Email comparison is case-insensitive for deduplication
+func (db *DBConnection) GetOrCreateCustomer(email, firstName, lastName string) (structs.Customer, error) {
+	// Normalize email to lowercase for consistent lookups
+	email = strings.ToLower(strings.TrimSpace(email))
+
+	// First, try to find existing customer
+	customer, err := db.GetCustomerByEmail(email)
+	if err == nil {
+		// Customer exists, return it
+		return customer, nil
+	}
+
+	// Customer doesn't exist, create new one
+	sqlQuery := `
+		INSERT INTO customers (email, first_name, last_name, created_at, updated_at)
+		VALUES (?, ?, ?, NOW(), NOW())
+	`
+
+	result, err := db.ExecuteQuery(sqlQuery, email, firstName, lastName)
+	if err != nil {
+		// Check if this is a duplicate key error (race condition)
+		if strings.Contains(err.Error(), "Duplicate entry") {
+			// Another request created the customer, fetch it
+			return db.GetCustomerByEmail(email)
+		}
+		return structs.Customer{}, err
+	}
+
+	customerID, err := result.LastInsertId()
+	if err != nil {
+		return structs.Customer{}, err
+	}
+
+	// Return the newly created customer
+	return db.GetCustomerByID(int(customerID))
+}
+
+// GetCustomerByEmail retrieves a customer by email address
+func (db *DBConnection) GetCustomerByEmail(email string) (structs.Customer, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+
+	sqlQuery := `
+		SELECT id, email, COALESCE(stripe_customer_id, ''), first_name, last_name,
+		       COALESCE(phone, ''), created_at, updated_at
+		FROM customers
+		WHERE LOWER(email) = ?
+		LIMIT 1
+	`
+
+	var c structs.Customer
+	err := db.QueryRow(sqlQuery, email).Scan(
+		&c.ID, &c.Email, &c.StripeCustomerID, &c.FirstName, &c.LastName,
+		&c.Phone, &c.CreatedAt, &c.UpdatedAt,
+	)
+
+	if err != nil {
+		return structs.Customer{}, err
+	}
+
+	return c, nil
+}
+
+// GetCustomerByID retrieves a customer by ID
+func (db *DBConnection) GetCustomerByID(customerID int) (structs.Customer, error) {
+	sqlQuery := `
+		SELECT id, email, COALESCE(stripe_customer_id, ''), first_name, last_name,
+		       COALESCE(phone, ''), created_at, updated_at
+		FROM customers
+		WHERE id = ?
+		LIMIT 1
+	`
+
+	var c structs.Customer
+	err := db.QueryRow(sqlQuery, customerID).Scan(
+		&c.ID, &c.Email, &c.StripeCustomerID, &c.FirstName, &c.LastName,
+		&c.Phone, &c.CreatedAt, &c.UpdatedAt,
+	)
+
+	if err != nil {
+		return structs.Customer{}, err
+	}
+
+	return c, nil
+}
+
+// UpdateCustomerStripeID updates the Stripe customer ID for a customer
+func (db *DBConnection) UpdateCustomerStripeID(customerID int, stripeCustomerID string) error {
+	sqlQuery := `
+		UPDATE customers
+		SET stripe_customer_id = ?, updated_at = NOW()
+		WHERE id = ?
+	`
+
+	_, err := db.ExecuteQuery(sqlQuery, stripeCustomerID, customerID)
+	return err
 }

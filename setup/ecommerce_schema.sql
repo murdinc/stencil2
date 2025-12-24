@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS orders (
     order_number VARCHAR(50) UNIQUE NOT NULL,
     customer_email VARCHAR(255) NOT NULL,
     customer_name VARCHAR(255) NOT NULL,
+    customer_id INT DEFAULT NULL,
     shipping_address_line1 VARCHAR(255),
     shipping_address_line2 VARCHAR(255),
     shipping_city VARCHAR(100),
@@ -128,12 +129,18 @@ CREATE TABLE IF NOT EXISTS orders (
     fulfillment_status VARCHAR(50) DEFAULT 'unfulfilled',  -- unfulfilled, fulfilled, shipped
     payment_method VARCHAR(50),
     stripe_payment_intent_id VARCHAR(255),
+    shipping_label_cost DECIMAL(10, 2) DEFAULT NULL,  -- actual cost paid for shipping label
+    tracking_number VARCHAR(100) DEFAULT NULL,
+    shipping_carrier VARCHAR(50) DEFAULT NULL,  -- USPS, UPS, FedEx, etc.
+    shipping_label_url VARCHAR(500) DEFAULT NULL,  -- URL to download label PDF
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_order_number (order_number),
     INDEX idx_customer_email (customer_email),
+    INDEX idx_customer_id (customer_id),
     INDEX idx_payment_status (payment_status),
-    INDEX idx_created_at (created_at)
+    INDEX idx_created_at (created_at),
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
 );
 
 -- Order Items
@@ -150,6 +157,20 @@ CREATE TABLE IF NOT EXISTS order_items (
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
     INDEX idx_order_id (order_id),
     INDEX idx_product_id (product_id)
+);
+
+-- Customers table for customer tracking
+CREATE TABLE IF NOT EXISTS customers (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    stripe_customer_id VARCHAR(255) UNIQUE DEFAULT NULL,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    phone VARCHAR(50) DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_email (email),
+    INDEX idx_stripe_customer_id (stripe_customer_id)
 );
 
 -- Clean up expired carts (run this periodically via cron)
