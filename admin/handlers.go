@@ -1222,6 +1222,213 @@ func (s *AdminServer) handleProductReorder(w http.ResponseWriter, r *http.Reques
 	http.Redirect(w, r, fmt.Sprintf("/site/%s/products", websiteID), http.StatusSeeOther)
 }
 
+// Variant handlers
+func (s *AdminServer) handleVariantNew(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	productID, err := strconv.Atoi(chi.URLParam(r, "productId"))
+	if err != nil {
+		http.Error(w, "Invalid product ID", http.StatusBadRequest)
+		return
+	}
+
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, "Website not found", http.StatusNotFound)
+		return
+	}
+
+	product, err := s.GetProduct(websiteID, productID)
+	if err != nil {
+		http.Error(w, "Product not found", http.StatusNotFound)
+		return
+	}
+
+	s.renderWithLayout(w, r, "variant_form_content.html", map[string]interface{}{
+		"Title":         "New Variant",
+		"Website":       website,
+		"Product":       product,
+		"Action":        fmt.Sprintf("/site/%s/products/%d/variants/create", websiteID, productID),
+		"ActiveSection": "products",
+	})
+}
+
+func (s *AdminServer) handleVariantCreate(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	productID, err := strconv.Atoi(chi.URLParam(r, "productId"))
+	if err != nil {
+		http.Error(w, "Invalid product ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	priceModifier, _ := strconv.ParseFloat(r.FormValue("priceModifier"), 64)
+	inventoryQuantity, _ := strconv.Atoi(r.FormValue("inventoryQuantity"))
+
+	err = s.CreateVariant(websiteID, productID, map[string]interface{}{
+		"title":             r.FormValue("title"),
+		"priceModifier":     priceModifier,
+		"sku":               r.FormValue("sku"),
+		"inventoryQuantity": inventoryQuantity,
+	})
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error creating variant: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.LogActivity("create", "variant", 0, websiteID, map[string]interface{}{
+		"product_id": productID,
+		"title":      r.FormValue("title"),
+	})
+
+	http.Redirect(w, r, fmt.Sprintf("/site/%s/products/%d/edit", websiteID, productID), http.StatusSeeOther)
+}
+
+func (s *AdminServer) handleVariantEdit(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	productID, err := strconv.Atoi(chi.URLParam(r, "productId"))
+	if err != nil {
+		http.Error(w, "Invalid product ID", http.StatusBadRequest)
+		return
+	}
+
+	variantID, err := strconv.Atoi(chi.URLParam(r, "variantId"))
+	if err != nil {
+		http.Error(w, "Invalid variant ID", http.StatusBadRequest)
+		return
+	}
+
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, "Website not found", http.StatusNotFound)
+		return
+	}
+
+	product, err := s.GetProduct(websiteID, productID)
+	if err != nil {
+		http.Error(w, "Product not found", http.StatusNotFound)
+		return
+	}
+
+	variant, err := s.GetVariant(websiteID, variantID)
+	if err != nil {
+		http.Error(w, "Variant not found", http.StatusNotFound)
+		return
+	}
+
+	s.renderWithLayout(w, r, "variant_form_content.html", map[string]interface{}{
+		"Title":         "Edit Variant",
+		"Website":       website,
+		"Product":       product,
+		"Variant":       variant,
+		"Action":        fmt.Sprintf("/site/%s/products/%d/variants/%d/update", websiteID, productID, variantID),
+		"ActiveSection": "products",
+	})
+}
+
+func (s *AdminServer) handleVariantUpdate(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	productID, err := strconv.Atoi(chi.URLParam(r, "productId"))
+	if err != nil {
+		http.Error(w, "Invalid product ID", http.StatusBadRequest)
+		return
+	}
+
+	variantID, err := strconv.Atoi(chi.URLParam(r, "variantId"))
+	if err != nil {
+		http.Error(w, "Invalid variant ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	priceModifier, _ := strconv.ParseFloat(r.FormValue("priceModifier"), 64)
+	inventoryQuantity, _ := strconv.Atoi(r.FormValue("inventoryQuantity"))
+
+	err = s.UpdateVariant(websiteID, variantID, map[string]interface{}{
+		"title":             r.FormValue("title"),
+		"priceModifier":     priceModifier,
+		"sku":               r.FormValue("sku"),
+		"inventoryQuantity": inventoryQuantity,
+	})
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error updating variant: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.LogActivity("update", "variant", variantID, websiteID, map[string]interface{}{
+		"product_id": productID,
+		"title":      r.FormValue("title"),
+	})
+
+	http.Redirect(w, r, fmt.Sprintf("/site/%s/products/%d/edit", websiteID, productID), http.StatusSeeOther)
+}
+
+func (s *AdminServer) handleVariantDelete(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	productID, err := strconv.Atoi(chi.URLParam(r, "productId"))
+	if err != nil {
+		http.Error(w, "Invalid product ID", http.StatusBadRequest)
+		return
+	}
+
+	variantID, err := strconv.Atoi(chi.URLParam(r, "variantId"))
+	if err != nil {
+		http.Error(w, "Invalid variant ID", http.StatusBadRequest)
+		return
+	}
+
+	err = s.DeleteVariant(websiteID, variantID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error deleting variant: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.LogActivity("delete", "variant", variantID, websiteID, map[string]interface{}{
+		"product_id": productID,
+	})
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *AdminServer) handleVariantReorder(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	productID, err := strconv.Atoi(chi.URLParam(r, "productId"))
+	if err != nil {
+		http.Error(w, "Invalid product ID", http.StatusBadRequest)
+		return
+	}
+
+	variantID, err := strconv.Atoi(chi.URLParam(r, "variantId"))
+	if err != nil {
+		http.Error(w, "Invalid variant ID", http.StatusBadRequest)
+		return
+	}
+
+	direction := chi.URLParam(r, "direction")
+	if direction != "up" && direction != "down" {
+		http.Error(w, "Invalid direction", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.ReorderVariant(websiteID, variantID, direction); err != nil {
+		http.Error(w, fmt.Sprintf("Error reordering variant: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.LogActivity("reorder", "variant", variantID, websiteID, map[string]string{"direction": direction, "product_id": fmt.Sprintf("%d", productID)})
+
+	http.Redirect(w, r, fmt.Sprintf("/site/%s/products/%d/edit", websiteID, productID), http.StatusSeeOther)
+}
+
 // Category/Collection handlers (simplified - just list and create/delete)
 func (s *AdminServer) handleCategoriesList(w http.ResponseWriter, r *http.Request) {
 	websiteID := chi.URLParam(r, "id")

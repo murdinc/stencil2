@@ -1426,15 +1426,14 @@ CREATE TABLE products_unified (
 CREATE TABLE product_variants (
     id INT PRIMARY KEY AUTO_INCREMENT,
     product_id INT,
-    title VARCHAR(255),
-    price DECIMAL(10, 2),
+    title VARCHAR(255),             -- Variant name (e.g., "Small", "Large", "Red")
+    price_modifier DECIMAL(10, 2) DEFAULT 0.00,  -- Add/subtract from base price
     sku VARCHAR(255),
-    inventory_quantity INT DEFAULT 0,
-    option1 VARCHAR(255),
-    option2 VARCHAR(255),
-    option3 VARCHAR(255),
+    inventory_quantity INT DEFAULT 0,  -- -1 = use product inventory, 0 = sold out, >0 = specific inventory
+    position INT DEFAULT 0,         -- Display order
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_product_id (product_id),
+    INDEX idx_position (position),
     FOREIGN KEY (product_id) REFERENCES products_unified(id) ON DELETE CASCADE
 );
 
@@ -1727,6 +1726,42 @@ The `{{ hash }}` function generates an MD5 hash of your `/public/` directory:
 When files change, the hash updates automatically, busting browser caches.
 
 ## Recent Updates & Bug Fixes
+
+### Product Variant System Refactoring (December 2024)
+
+The product variant system has been completely refactored for simplicity and flexibility:
+
+**Changes:**
+- **Simplified Variant Options**: Removed confusing Option1/Option2/Option3 fields in favor of a single `title` field (e.g., "Small", "Large", "Red")
+- **Price Modifier System**: Variants now use a `price_modifier` field that adds/subtracts from the product's base price instead of having separate prices
+  - Example: Product base price $20, variant "Large" with `+$5.00` modifier = $25.00 final price
+  - Example: Product base price $30, variant "Sale" with `-$10.00` modifier = $20.00 final price
+- **Flexible Inventory**: New inventory system supports both shared and per-variant tracking:
+  - `-1` = Use product's overall inventory (shared across all variants)
+  - `0` = Variant is sold out
+  - `>0` = Specific inventory for this variant
+- **Variant Reordering**: Added up/down arrow controls to reorder variants in the admin UI
+- **Frontend Price Calculation**: Product pages now dynamically calculate and display final prices (base + modifier)
+- **Cart System Updated**: Cart add functionality now correctly calculates final price when adding variant products
+
+**Database Migration Required:**
+```sql
+ALTER TABLE product_variants DROP COLUMN price;
+ALTER TABLE product_variants DROP COLUMN compare_at_price;
+ALTER TABLE product_variants DROP COLUMN option1;
+ALTER TABLE product_variants DROP COLUMN option2;
+ALTER TABLE product_variants DROP COLUMN option3;
+ALTER TABLE product_variants ADD COLUMN price_modifier DECIMAL(10, 2) DEFAULT 0.00 AFTER title;
+ALTER TABLE product_variants ADD COLUMN position INT DEFAULT 0 AFTER inventory_quantity;
+```
+
+**Files Updated:**
+- `database/ecommerce.go` - Updated queries and schema
+- `admin/queries.go` - Variant CRUD operations
+- `admin/handlers.go` - Variant handlers and reordering
+- `admin/templates/variant_form_content.html` - Simplified variant form
+- `admin/templates/product_form_content.html` - Updated variant display table
+- `websites/*/templates/product/product.tpl` - Frontend price calculation
 
 ### Admin CMS Improvements (December 2024)
 

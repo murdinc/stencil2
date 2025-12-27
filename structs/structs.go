@@ -117,11 +117,7 @@ type ProductVariant struct {
 	ID                int     `json:"id"`
 	ProductID         int     `json:"product_id"`
 	Title             string  `json:"title"`
-	Option1           string  `json:"option1"`
-	Option2           string  `json:"option2"`
-	Option3           string  `json:"option3"`
-	Price             float64 `json:"price"`
-	CompareAtPrice    float64 `json:"compare_at_price"`
+	PriceModifier     float64 `json:"price_modifier"`
 	SKU               string  `json:"sku"`
 	InventoryQuantity int     `json:"inventory_quantity"`
 	Position          int     `json:"position"`

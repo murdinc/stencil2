@@ -81,6 +81,14 @@ func (s *AdminServer) setupRoutes() {
 		r.Post("/site/{id}/products/{productId}/reorder/{direction}", s.handleProductReorder)
 		r.Post("/site/{id}/products/{productId}/images/reorder", s.handleProductImageReorder)
 
+		// Variant management
+		r.Get("/site/{id}/products/{productId}/variants/new", s.handleVariantNew)
+		r.Post("/site/{id}/products/{productId}/variants/create", s.handleVariantCreate)
+		r.Get("/site/{id}/products/{productId}/variants/{variantId}/edit", s.handleVariantEdit)
+		r.Post("/site/{id}/products/{productId}/variants/{variantId}/update", s.handleVariantUpdate)
+		r.Post("/site/{id}/products/{productId}/variants/{variantId}/delete", s.handleVariantDelete)
+		r.Post("/site/{id}/products/{productId}/variants/{variantId}/reorder/{direction}", s.handleVariantReorder)
+
 		// Category management
 		r.Get("/site/{id}/categories", s.handleCategoriesList)
 		r.Post("/site/{id}/categories/new", s.handleCategoryCreate)

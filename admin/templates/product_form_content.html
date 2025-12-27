@@ -21,6 +21,7 @@
         <div class="form-group">
             <label>Price:</label>
             <input type="number" name="price" step="0.01" value="{{if .Product}}{{.Product.Price}}{{end}}" required>
+            <small style="display: block; margin-top: 4px; color: #666;">Base price for product. Variants can add/subtract from this price.</small>
         </div>
         <div class="form-group">
             <label>Compare At Price:</label>
@@ -33,6 +34,7 @@
         <div class="form-group">
             <label>Inventory Quantity:</label>
             <input type="number" name="inventoryQuantity" value="{{if .Product}}{{.Product.InventoryQuantity}}{{end}}">
+            <small style="display: block; margin-top: 4px; color: #666;">Overall inventory. Variants can use this or have their own inventory.</small>
         </div>
         <div class="form-group">
             <label>Inventory Policy:</label>
@@ -41,6 +43,72 @@
                 <option value="continue" {{if .Product}}{{if eq .Product.InventoryPolicy "continue"}}selected{{end}}{{end}}>Continue</option>
             </select>
         </div>
+
+        {{if .Product}}
+        <div class="form-group">
+            <label>Product Variants:</label>
+            <div style="border: 1px solid #ddd; border-radius: 4px; padding: 15px; background: #f7fafc;">
+                <p style="font-size: 13px; color: #666; margin-bottom: 15px;">
+                    Manage different variations of this product (e.g., sizes, colors). Variants override the base price and inventory above.
+                </p>
+
+                {{if .Product.Variants}}
+                <div id="variants-list" style="margin-bottom: 15px;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="background: #667eea; color: white;">
+                                <th style="padding: 8px; text-align: center; width: 60px;">Order</th>
+                                <th style="padding: 8px; text-align: left;">Title</th>
+                                <th style="padding: 8px; text-align: right;">Price Modifier</th>
+                                <th style="padding: 8px; text-align: right;">Inventory</th>
+                                <th style="padding: 8px; text-align: left;">SKU</th>
+                                <th style="padding: 8px; text-align: center; width: 80px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range $index, $variant := .Product.Variants}}
+                            <tr style="border-bottom: 1px solid #ddd;">
+                                <td style="padding: 8px; text-align: center; white-space: nowrap;">
+                                    {{if gt $index 0}}
+                                        <form style="display:inline; margin:0;">
+                                            <button type="submit" formmethod="POST" formaction="/site/{{$.Website.ID}}/products/{{$.Product.ID}}/variants/{{$variant.ID}}/reorder/up" class="btn btn-sm btn-success" style="padding:2px 8px; margin-right:2px;">↑</button>
+                                        </form>
+                                    {{else}}
+                                        <button disabled class="btn btn-sm" style="padding:2px 8px;background:#ddd;color:#999;cursor:not-allowed; margin-right:2px;">↑</button>
+                                    {{end}}
+                                    {{$variantCount := len $.Product.Variants}}
+                                    {{$nextIndex := add $index 1}}
+                                    {{if lt $nextIndex $variantCount}}
+                                        <form style="display:inline; margin:0;">
+                                            <button type="submit" formmethod="POST" formaction="/site/{{$.Website.ID}}/products/{{$.Product.ID}}/variants/{{$variant.ID}}/reorder/down" class="btn btn-sm btn-success" style="padding:2px 8px;">↓</button>
+                                        </form>
+                                    {{else}}
+                                        <button disabled class="btn btn-sm" style="padding:2px 8px;background:#ddd;color:#999;cursor:not-allowed;">↓</button>
+                                    {{end}}
+                                </td>
+                                <td style="padding: 8px;"><strong>{{$variant.Title}}</strong></td>
+                                <td style="padding: 8px; text-align: right;">{{if ne $variant.PriceModifier 0.0}}{{if gt $variant.PriceModifier 0.0}}+{{end}}${{printf "%.2f" $variant.PriceModifier}}{{else}}-{{end}}</td>
+                                <td style="padding: 8px; text-align: right;">{{$variant.InventoryQuantity}}</td>
+                                <td style="padding: 8px;">{{$variant.SKU}}</td>
+                                <td style="padding: 8px; text-align: center;">
+                                    <button type="button" onclick="editVariant({{$variant.ID}})" class="btn">Edit</button>
+                                </td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+                {{else}}
+                <p style="color: #999; font-style: italic; margin-bottom: 15px;">No variants yet.</p>
+                {{end}}
+
+                <button type="button" onclick="window.location.href='/site/{{$.Website.ID}}/products/{{.Product.ID}}/variants/new'" class="btn btn-success" style="font-size: 13px;">
+                    + Add Variant
+                </button>
+            </div>
+        </div>
+        {{end}}
+
         <div class="form-group">
             <label>Status:</label>
             <select name="status">
@@ -183,6 +251,11 @@
                     alert('Failed to save image order');
                 });
             }
+        }
+
+        // Variant management
+        function editVariant(variantId) {
+            window.location.href = '/site/{{.Website.ID}}/products/{{if .Product}}{{.Product.ID}}{{end}}/variants/' + variantId + '/edit';
         }
         </script>
 

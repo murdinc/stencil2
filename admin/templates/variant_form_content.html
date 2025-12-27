@@ -1,0 +1,68 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>{{if .Variant}}Edit Variant{{else}}New Variant{{end}}</h2>
+    <p>For product: <strong>{{.Product.Name}}</strong></p>
+</div>
+
+<div class="card">
+    <form method="POST" action="{{.Action}}">
+        <div class="form-group">
+            <label>Variant Title:</label>
+            <input type="text" name="title" value="{{if .Variant}}{{.Variant.Title}}{{end}}" required placeholder="e.g., Small, Large, Red, Blue">
+            <small style="display: block; margin-top: 4px; color: #666;">Display name for this variant (e.g., "Small", "Large", "Red", "Blue")</small>
+        </div>
+
+        <div class="form-group">
+            <label>Price Modifier (optional):</label>
+            <input type="number" name="priceModifier" step="0.01" value="{{if .Variant}}{{.Variant.PriceModifier}}{{else}}0{{end}}" placeholder="0.00">
+            <small style="display: block; margin-top: 4px; color: #666;">Add or subtract from base price (e.g., +2.00 for Large, -5.00 for Sale). Leave 0 for same price.</small>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+                <label>SKU:</label>
+                <input type="text" name="sku" value="{{if .Variant}}{{.Variant.SKU}}{{end}}">
+                <small style="display: block; margin-top: 4px; color: #666;">Stock keeping unit (optional)</small>
+            </div>
+
+            <div class="form-group">
+                <label>Inventory Quantity:</label>
+                <input type="number" name="inventoryQuantity" value="{{if .Variant}}{{.Variant.InventoryQuantity}}{{else}}-1{{end}}">
+                <small style="display: block; margin-top: 4px; color: #666;">Set to -1 to use the product's overall inventory. Set to 0 to mark this variant as sold out. Set to a number to track per-variant.</small>
+            </div>
+        </div>
+
+        <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd;">
+            <button type="submit" class="btn btn-success">Save Variant</button>
+            <a href="/site/{{.Website.ID}}/products/{{.Product.ID}}/edit" class="btn" style="background: #6c757d; margin-left: 10px;">Cancel</a>
+
+            {{if .Variant}}
+            <button type="button" onclick="deleteVariant()" class="btn" style="background: #e53e3e; border-color: #e53e3e; color: white; float: right;">Delete Variant</button>
+            {{end}}
+        </div>
+    </form>
+</div>
+
+{{if .Variant}}
+<script>
+function deleteVariant() {
+    if (confirm('Are you sure you want to delete this variant? This cannot be undone.')) {
+        fetch('/site/{{.Website.ID}}/products/{{.Product.ID}}/variants/{{.Variant.ID}}/delete', {
+            method: 'POST'
+        })
+        .then(response => {
+            if (response.ok) {
+                window.location.href = '/site/{{.Website.ID}}/products/{{.Product.ID}}/edit';
+            } else {
+                alert('Failed to delete variant');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Failed to delete variant');
+        });
+    }
+}
+</script>
+{{end}}
+{{end}}

@@ -104,11 +104,7 @@ func (db *DBConnection) InitEcommerceTables() error {
 			id INT PRIMARY KEY AUTO_INCREMENT,
 			product_id INT NOT NULL,
 			title VARCHAR(255),
-			option1 VARCHAR(100),
-			option2 VARCHAR(100),
-			option3 VARCHAR(100),
-			price DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
-			compare_at_price DECIMAL(10, 2) DEFAULT NULL,
+			price_modifier DECIMAL(10, 2) DEFAULT 0.00,
 			sku VARCHAR(100),
 			inventory_quantity INT DEFAULT 0,
 			position INT DEFAULT 0,
@@ -581,8 +577,7 @@ func (db *DBConnection) getProductImages(productID int) ([]structs.ProductImage,
 func (db *DBConnection) getProductVariants(productID int) ([]structs.ProductVariant, error) {
 	sqlQuery := `
 		SELECT
-			id, product_id, title, option1, option2, option3,
-			price, compare_at_price, sku, inventory_quantity, position
+			id, product_id, title, price_modifier, sku, inventory_quantity, position
 		FROM product_variants
 		WHERE product_id = ?
 		ORDER BY position ASC
@@ -597,21 +592,18 @@ func (db *DBConnection) getProductVariants(productID int) ([]structs.ProductVari
 	var variants []structs.ProductVariant
 	for rows.Next() {
 		var variant structs.ProductVariant
-		var option1, option2, option3 sql.NullString
+		var sku sql.NullString
 
 		err := rows.Scan(
 			&variant.ID, &variant.ProductID, &variant.Title,
-			&option1, &option2, &option3,
-			&variant.Price, &variant.CompareAtPrice, &variant.SKU,
+			&variant.PriceModifier, &sku,
 			&variant.InventoryQuantity, &variant.Position,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		variant.Option1 = option1.String
-		variant.Option2 = option2.String
-		variant.Option3 = option3.String
+		variant.SKU = sku.String
 
 		variants = append(variants, variant)
 	}
@@ -719,7 +711,7 @@ func (db *DBConnection) getCartItems(cartID string) ([]structs.CartItem, error) 
 		SELECT
 			ci.id, ci.product_id, ci.variant_id, ci.quantity, ci.price,
 			p.name, p.slug, p.description, p.price,
-			ifnull(pv.title, ''), ifnull(pv.option1, ''), ifnull(pv.option2, ''), ifnull(pv.option3, '')
+			ifnull(pv.title, '')
 		FROM cart_items ci
 		JOIN products_unified p ON ci.product_id = p.id
 		LEFT JOIN product_variants pv ON ci.variant_id = pv.id
@@ -738,7 +730,7 @@ func (db *DBConnection) getCartItems(cartID string) ([]structs.CartItem, error) 
 		err := rows.Scan(
 			&item.ID, &item.ProductID, &item.VariantID, &item.Quantity, &item.Price,
 			&item.Product.Name, &item.Product.Slug, &item.Product.Description, &item.Product.Price,
-			&item.Variant.Title, &item.Variant.Option1, &item.Variant.Option2, &item.Variant.Option3,
+			&item.Variant.Title,
 		)
 		if err != nil {
 			return nil, err
@@ -756,24 +748,28 @@ func (db *DBConnection) getCartItems(cartID string) ([]structs.CartItem, error) 
 
 // AddToCart adds an item to the cart
 func (db *DBConnection) AddToCart(sessionID string, productID int, variantID int, quantity int) error {
-	// Get the price
-	var price float64
+	// Get the base price from product
+	var basePrice float64
+	err := db.QueryRow("SELECT price FROM products_unified WHERE id = ?", productID).Scan(&basePrice)
+	if err != nil {
+		return err
+	}
+
+	// Calculate final price (base price + variant modifier if applicable)
+	finalPrice := basePrice
 	if variantID > 0 {
-		err := db.QueryRow("SELECT price FROM product_variants WHERE id = ?", variantID).Scan(&price)
+		var priceModifier float64
+		err := db.QueryRow("SELECT price_modifier FROM product_variants WHERE id = ?", variantID).Scan(&priceModifier)
 		if err != nil {
 			return err
 		}
-	} else {
-		err := db.QueryRow("SELECT price FROM products_unified WHERE id = ?", productID).Scan(&price)
-		if err != nil {
-			return err
-		}
+		finalPrice = basePrice + priceModifier
 	}
 
 	// Check if item already exists in cart
 	var existingID int
 	var existingQuantity int
-	err := db.QueryRow(`
+	err = db.QueryRow(`
 		SELECT id, quantity FROM cart_items
 		WHERE cart_id = ? AND product_id = ? AND variant_id = ?
 	`, sessionID, productID, variantID).Scan(&existingID, &existingQuantity)
@@ -784,7 +780,7 @@ func (db *DBConnection) AddToCart(sessionID string, productID int, variantID int
 			INSERT INTO cart_items (cart_id, product_id, variant_id, quantity, price)
 			VALUES (?, ?, ?, ?, ?)
 		`
-		_, err = db.ExecuteQuery(sqlQuery, sessionID, productID, variantID, quantity, price)
+		_, err = db.ExecuteQuery(sqlQuery, sessionID, productID, variantID, quantity, finalPrice)
 		return err
 	} else if err != nil {
 		return err

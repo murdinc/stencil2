@@ -12,6 +12,7 @@ import (
 
 	"github.com/murdinc/stencil2/configs"
 	"github.com/murdinc/stencil2/shippo"
+	"github.com/murdinc/stencil2/structs"
 )
 
 // Website represents a managed website
@@ -101,21 +102,22 @@ type Article struct {
 
 // Product represents an e-commerce product
 type Product struct {
-	ID                int       `json:"id"`
-	Name              string    `json:"name"`
-	Slug              string    `json:"slug"`
-	Description       string    `json:"description"`
-	Price             float64   `json:"price"`
-	CompareAtPrice    float64   `json:"compareAtPrice"`
-	SKU               string    `json:"sku"`
-	InventoryQuantity int       `json:"inventoryQuantity"`
-	InventoryPolicy   string    `json:"inventoryPolicy"`
-	Status            string    `json:"status"`
-	Featured          bool      `json:"featured"`
-	SortOrder         int       `json:"sortOrder"`
-	ReleasedDate      time.Time `json:"releasedDate"`
-	CreatedAt         time.Time `json:"createdAt"`
-	UpdatedAt         time.Time `json:"updatedAt"`
+	ID                int                      `json:"id"`
+	Name              string                   `json:"name"`
+	Slug              string                   `json:"slug"`
+	Description       string                   `json:"description"`
+	Price             float64                  `json:"price"`
+	CompareAtPrice    float64                  `json:"compareAtPrice"`
+	SKU               string                   `json:"sku"`
+	InventoryQuantity int                      `json:"inventoryQuantity"`
+	InventoryPolicy   string                   `json:"inventoryPolicy"`
+	Status            string                   `json:"status"`
+	Featured          bool                     `json:"featured"`
+	SortOrder         int                      `json:"sortOrder"`
+	ReleasedDate      time.Time                `json:"releasedDate"`
+	CreatedAt         time.Time                `json:"createdAt"`
+	UpdatedAt         time.Time                `json:"updatedAt"`
+	Variants          []structs.ProductVariant `json:"variants"`
 }
 
 // Category represents an article category
@@ -818,6 +820,14 @@ func (s *AdminServer) GetProduct(websiteID string, productID int) (Product, erro
 		p.ReleasedDate = releasedDate.Time
 	}
 
+	// Load variants for this product
+	p.Variants, err = s.getProductVariants(websiteID, productID)
+	if err != nil {
+		// Don't fail if variants can't be loaded, just log it
+		log.Printf("Warning: Failed to load variants for product %d: %v", productID, err)
+		p.Variants = []structs.ProductVariant{}
+	}
+
 	return p, nil
 }
 
@@ -943,6 +953,210 @@ func (s *AdminServer) ReorderProduct(websiteID string, productID int, direction 
 	}
 
 	_, err = tx.Exec(`UPDATE products_unified SET sort_order = ? WHERE id = ?`, currentSortOrder, targetID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// Helper function to load variants for a product
+func (s *AdminServer) getProductVariants(websiteID string, productID int) ([]structs.ProductVariant, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT id, product_id, title, price_modifier, sku, inventory_quantity, position
+		FROM product_variants
+		WHERE product_id = ?
+		ORDER BY position ASC
+	`
+
+	rows, err := db.Query(query, productID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var variants []structs.ProductVariant
+	for rows.Next() {
+		var variant structs.ProductVariant
+		var sku sql.NullString
+
+		err := rows.Scan(
+			&variant.ID,
+			&variant.ProductID,
+			&variant.Title,
+			&variant.PriceModifier,
+			&sku,
+			&variant.InventoryQuantity,
+			&variant.Position,
+		)
+		if err != nil {
+			continue
+		}
+
+		variant.SKU = sku.String
+
+		variants = append(variants, variant)
+	}
+
+	return variants, nil
+}
+
+// Variant management functions
+func (s *AdminServer) CreateVariant(websiteID string, productID int, data map[string]interface{}) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	// Get the max position for this product
+	var maxPosition int
+	err = db.QueryRow(`SELECT COALESCE(MAX(position), 0) FROM product_variants WHERE product_id = ?`, productID).Scan(&maxPosition)
+	if err != nil {
+		maxPosition = 0
+	}
+
+	query := `
+		INSERT INTO product_variants (
+			product_id, title, price_modifier, sku, inventory_quantity, position
+		) VALUES (?, ?, ?, ?, ?, ?)
+	`
+
+	_, err = db.Exec(query,
+		productID,
+		data["title"],
+		data["priceModifier"],
+		data["sku"],
+		data["inventoryQuantity"],
+		maxPosition+1,
+	)
+
+	return err
+}
+
+func (s *AdminServer) GetVariant(websiteID string, variantID int) (structs.ProductVariant, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return structs.ProductVariant{}, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT id, product_id, title, price_modifier, sku, inventory_quantity, position
+		FROM product_variants
+		WHERE id = ?
+	`
+
+	var variant structs.ProductVariant
+	var sku sql.NullString
+
+	err = db.QueryRow(query, variantID).Scan(
+		&variant.ID,
+		&variant.ProductID,
+		&variant.Title,
+		&variant.PriceModifier,
+		&sku,
+		&variant.InventoryQuantity,
+		&variant.Position,
+	)
+
+	if err != nil {
+		return structs.ProductVariant{}, err
+	}
+
+	variant.SKU = sku.String
+
+	return variant, nil
+}
+
+func (s *AdminServer) UpdateVariant(websiteID string, variantID int, data map[string]interface{}) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	query := `
+		UPDATE product_variants
+		SET title = ?, price_modifier = ?, sku = ?, inventory_quantity = ?
+		WHERE id = ?
+	`
+
+	_, err = db.Exec(query,
+		data["title"],
+		data["priceModifier"],
+		data["sku"],
+		data["inventoryQuantity"],
+		variantID,
+	)
+
+	return err
+}
+
+func (s *AdminServer) DeleteVariant(websiteID string, variantID int) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	query := `DELETE FROM product_variants WHERE id = ?`
+	_, err = db.Exec(query, variantID)
+	return err
+}
+
+// ReorderVariant moves a variant up or down in the list
+func (s *AdminServer) ReorderVariant(websiteID string, variantID int, direction string) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	// Get current variant's position and product_id
+	var currentPosition, productID int
+	err = db.QueryRow(`SELECT position, product_id FROM product_variants WHERE id = ?`, variantID).Scan(&currentPosition, &productID)
+	if err != nil {
+		return err
+	}
+
+	var targetPosition int
+	var targetID int
+	if direction == "up" {
+		// Find the variant with the next lower position (same product)
+		err = db.QueryRow(`SELECT id, position FROM product_variants WHERE product_id = ? AND position < ? ORDER BY position DESC LIMIT 1`, productID, currentPosition).Scan(&targetID, &targetPosition)
+	} else if direction == "down" {
+		// Find the variant with the next higher position (same product)
+		err = db.QueryRow(`SELECT id, position FROM product_variants WHERE product_id = ? AND position > ? ORDER BY position ASC LIMIT 1`, productID, currentPosition).Scan(&targetID, &targetPosition)
+	}
+
+	if err == sql.ErrNoRows {
+		// Already at top/bottom, nothing to do
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	// Swap position values
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`UPDATE product_variants SET position = ? WHERE id = ?`, targetPosition, variantID)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`UPDATE product_variants SET position = ? WHERE id = ?`, currentPosition, targetID)
 	if err != nil {
 		return err
 	}
