@@ -83,6 +83,47 @@ func (website *Website) HandleUnlockSubmit(w http.ResponseWriter, r *http.Reques
 	website.ExecuteTemplate(w, tpl, pageData)
 }
 
+// HandleRobotsTxt serves robots.txt dynamically
+func (website *Website) HandleRobotsTxt(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+
+	robotsTxt := website.WebsiteConfig.RobotsTxt
+	if robotsTxt == "" {
+		// Default robots.txt if not configured
+		robotsTxt = fmt.Sprintf("User-agent: *\nAllow: /\n\nSitemap: %s/sitemap.xml", website.EnvironmentConfig.BaseURL)
+	}
+
+	w.Write([]byte(robotsTxt))
+}
+
+// HandleSitemapIndex serves the root sitemap index at /sitemap.xml
+func (website *Website) HandleSitemapIndex(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+
+	baseURL := website.EnvironmentConfig.BaseURL
+	if baseURL == "" {
+		baseURL = fmt.Sprintf("https://%s", website.WebsiteConfig.SiteName)
+	}
+
+	sitemapIndex := `<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <sitemap>
+        <loc>` + baseURL + `/sitemaps/sitemaps-index.xml</loc>
+    </sitemap>
+    <sitemap>
+        <loc>` + baseURL + `/sitemaps/products.xml</loc>
+    </sitemap>
+    <sitemap>
+        <loc>` + baseURL + `/sitemaps/collections.xml</loc>
+    </sitemap>
+    <sitemap>
+        <loc>` + baseURL + `/sitemaps/pages.xml</loc>
+    </sitemap>
+</sitemapindex>`
+
+	w.Write([]byte(sitemapIndex))
+}
+
 // Builds out a route for a given route name
 func (website *Website) GetRoute(name string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -174,6 +215,29 @@ func (website *Website) GetRoute(name string) func(w http.ResponseWriter, r *htt
 				}
 				pageData.Post = post
 
+				// Populate SEO data for article
+				if post.Slug != "" {
+					pageData.SEO.Title = post.Title
+					pageData.SEO.Description = post.Description
+					pageData.SEO.Keywords = post.Keywords
+					pageData.SEO.Type = "article"
+
+					// Use canonical URL if set, otherwise construct from slug
+					if post.CanonicalURL != "" {
+						pageData.SEO.Canonical = post.CanonicalURL
+					} else {
+						pageData.SEO.Canonical = fmt.Sprintf("%s/%s", website.EnvironmentConfig.BaseURL, post.Slug)
+					}
+
+					// Use post image if available
+					if post.Image.URL != "" {
+						pageData.SEO.Image = post.Image.URL
+					}
+
+					// Generate structured data for article
+					pageData.SEO.StructuredData = GenerateArticleSchema(post, *website.WebsiteConfig)
+				}
+
 			case "posts":
 				posts, err := website.DBConn.GetMultiplePosts(vars, URLParams)
 				if err != nil {
@@ -214,6 +278,22 @@ func (website *Website) GetRoute(name string) func(w http.ResponseWriter, r *htt
 				}
 				pageData.Product = product
 
+				// Populate SEO data for product
+				if product.Slug != "" {
+					pageData.SEO.Title = product.Name
+					pageData.SEO.Description = product.Description
+					pageData.SEO.Type = "product"
+					pageData.SEO.Canonical = fmt.Sprintf("%s/products/%s", website.EnvironmentConfig.BaseURL, product.Slug)
+
+					// Use first product image if available
+					if len(product.Images) > 0 && product.Images[0].Image.URL != "" {
+						pageData.SEO.Image = product.Images[0].Image.URL
+					}
+
+					// Generate structured data for product
+					pageData.SEO.StructuredData = GenerateProductSchema(product, *website.WebsiteConfig)
+				}
+
 			case "products":
 				products, err := website.DBConn.GetProducts(vars, URLParams)
 				if err != nil {
@@ -252,6 +332,22 @@ func (website *Website) GetRoute(name string) func(w http.ResponseWriter, r *htt
 				}
 				pageData.Products = products
 
+				// Populate SEO data for collection
+				if collection.Slug != "" {
+					pageData.SEO.Title = collection.Name
+					pageData.SEO.Description = collection.Description
+					pageData.SEO.Type = "website"
+					pageData.SEO.Canonical = fmt.Sprintf("%s/collections/%s", website.EnvironmentConfig.BaseURL, collection.Slug)
+
+					// Use collection image if available
+					if collection.Image.URL != "" {
+						pageData.SEO.Image = collection.Image.URL
+					}
+
+					// Generate structured data for collection with products
+					pageData.SEO.StructuredData = GenerateCollectionSchema(collection, products, *website.WebsiteConfig)
+				}
+
 			case "collections":
 				collections, err := website.DBConn.GetCollections()
 				if err != nil {
@@ -284,6 +380,12 @@ func (website *Website) GetRouter() func() chi.Router {
 		// Early access unlock route (exempt from middleware)
 		r.Get("/unlock", website.HandleUnlockPage)
 		r.Post("/unlock", website.HandleUnlockSubmit)
+
+		// robots.txt route
+		r.Get("/robots.txt", website.HandleRobotsTxt)
+
+		// sitemap.xml index route
+		r.Get("/sitemap.xml", website.HandleSitemapIndex)
 
 		// Load Website templates
 		for _, template := range *website.TemplateConfigs {

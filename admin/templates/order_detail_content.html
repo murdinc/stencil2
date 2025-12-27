@@ -1,7 +1,12 @@
 {{define "content"}}
-<div class="content-header">
-    <h2>Order {{.Order.OrderNumber}}</h2>
-    <p>View order details for {{.Website.SiteName}}</p>
+<div class="content-header" style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+        <h2>Order {{.Order.OrderNumber}}</h2>
+        <p>View order details for {{.Website.SiteName}}</p>
+    </div>
+    <a href="/site/{{.Website.ID}}/orders/{{.Order.ID}}/packing-slip" target="_blank" class="btn" style="background: #667eea; color: white; text-decoration: none;">
+        Print Packing Slip
+    </a>
 </div>
 
 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px;">

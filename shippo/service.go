@@ -154,6 +154,50 @@ type TrackingResponse struct {
 	Metadata         string           `json:"metadata"`
 }
 
+// doRequest is a helper method to make HTTP requests to Shippo API
+func (c *Client) doRequest(method, endpoint string, payload interface{}, result interface{}) error {
+	var body []byte
+	var err error
+
+	if payload != nil {
+		body, err = json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request: %w", err)
+		}
+	}
+
+	req, err := http.NewRequest(method, baseURL+endpoint, bytes.NewBuffer(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "ShippoToken "+c.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("shippo API error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	if result != nil {
+		if err := json.Unmarshal(respBody, result); err != nil {
+			return fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // GetRates gets shipping rates for a shipment
 func (c *Client) GetRates(from, to Address, parcel Parcel) (*ShipmentResponse, error) {
 	shipment := Shipment{
@@ -162,37 +206,9 @@ func (c *Client) GetRates(from, to Address, parcel Parcel) (*ShipmentResponse, e
 		Parcels:     []Parcel{parcel},
 	}
 
-	body, err := json.Marshal(shipment)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal shipment: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", baseURL+"/shipments/", bytes.NewBuffer(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "ShippoToken "+c.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("shippo API error (status %d): %s", resp.StatusCode, string(respBody))
-	}
-
 	var shipmentResp ShipmentResponse
-	if err := json.Unmarshal(respBody, &shipmentResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	if err := c.doRequest("POST", "/shipments/", shipment, &shipmentResp); err != nil {
+		return nil, err
 	}
 
 	return &shipmentResp, nil
@@ -210,37 +226,9 @@ func (c *Client) PurchaseLabel(rateID string, labelFileType string) (*Transactio
 		"async":           false,
 	}
 
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", baseURL+"/transactions/", bytes.NewBuffer(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "ShippoToken "+c.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("shippo API error (status %d): %s", resp.StatusCode, string(respBody))
-	}
-
 	var transaction Transaction
-	if err := json.Unmarshal(respBody, &transaction); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	if err := c.doRequest("POST", "/transactions/", reqBody, &transaction); err != nil {
+		return nil, err
 	}
 
 	if transaction.Status != "SUCCESS" {
@@ -266,37 +254,9 @@ func (c *Client) ValidateAddress(addr Address) (*AddressResponse, error) {
 		"validate": true,
 	}
 
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal address: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", baseURL+"/addresses/", bytes.NewBuffer(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "ShippoToken "+c.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("shippo API error (status %d): %s", resp.StatusCode, string(respBody))
-	}
-
 	var addrResp AddressResponse
-	if err := json.Unmarshal(respBody, &addrResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	if err := c.doRequest("POST", "/addresses/", reqBody, &addrResp); err != nil {
+		return nil, err
 	}
 
 	return &addrResp, nil
@@ -310,37 +270,9 @@ func (c *Client) GetTracking(carrier, trackingNumber string) (*TrackingResponse,
 		"tracking_number": trackingNumber,
 	}
 
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal tracking request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", baseURL+"/tracks/", bytes.NewBuffer(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "ShippoToken "+c.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("shippo API error (status %d): %s", resp.StatusCode, string(respBody))
-	}
-
 	var trackingResp TrackingResponse
-	if err := json.Unmarshal(respBody, &trackingResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	if err := c.doRequest("POST", "/tracks/", reqBody, &trackingResp); err != nil {
+		return nil, err
 	}
 
 	return &trackingResp, nil

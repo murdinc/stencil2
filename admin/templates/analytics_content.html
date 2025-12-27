@@ -1,0 +1,281 @@
+{{define "content"}}
+<div class="content-header">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h2>Analytics</h2>
+            <p>Traffic and engagement metrics for {{.Website.SiteName}}</p>
+        </div>
+        <div style="background: #48bb78; color: white; padding: 12px 24px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 32px; font-weight: bold;">{{.ActiveUsers}}</div>
+            <div style="font-size: 13px; opacity: 0.9;">Active Users Now</div>
+        </div>
+    </div>
+</div>
+
+<!-- Time Period Selector -->
+<div class="card" style="margin-bottom: 20px;">
+    <form method="GET" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; align-items: end;">
+        <div>
+            <label style="display: block; margin-bottom: 4px; font-weight: 600; font-size: 14px;">Time Period</label>
+            <select name="days" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" onchange="this.form.submit()">
+                <option value="7" {{if eq .Days 7}}selected{{end}}>Last 7 days</option>
+                <option value="30" {{if eq .Days 30}}selected{{end}}>Last 30 days</option>
+                <option value="90" {{if eq .Days 90}}selected{{end}}>Last 90 days</option>
+                <option value="365" {{if eq .Days 365}}selected{{end}}>Last year</option>
+            </select>
+        </div>
+        <div style="padding-top: 24px; font-size: 14px; color: #666;">
+            {{.StartDate}} to {{.EndDate}}
+        </div>
+    </form>
+</div>
+
+<!-- Overview Stats -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px;">
+    <div class="card" style="text-align: center; padding: 24px;">
+        <div style="font-size: 13px; color: #666; margin-bottom: 8px;">Total Pageviews</div>
+        <div style="font-size: 32px; font-weight: bold; color: #2563eb;">{{index .Stats "total_views"}}</div>
+    </div>
+    <div class="card" style="text-align: center; padding: 24px;">
+        <div style="font-size: 13px; color: #666; margin-bottom: 8px;">Unique Visitors</div>
+        <div style="font-size: 32px; font-weight: bold; color: #48bb78;">{{index .Stats "unique_sessions"}}</div>
+    </div>
+    <div class="card" style="text-align: center; padding: 24px;">
+        <div style="font-size: 13px; color: #666; margin-bottom: 8px;">Avg. Pages/Visit</div>
+        <div style="font-size: 32px; font-weight: bold; color: #f59e0b;">{{printf "%.1f" .AvgPages}}</div>
+    </div>
+    <div class="card" style="text-align: center; padding: 24px;">
+        <div style="font-size: 13px; color: #666; margin-bottom: 8px;">Bounce Rate</div>
+        <div style="font-size: 32px; font-weight: bold; color: #ef4444;">{{printf "%.1f" .BounceRate}}%</div>
+    </div>
+    <div class="card" style="text-align: center; padding: 24px;">
+        <div style="font-size: 13px; color: #666; margin-bottom: 8px;">Avg. Time on Site</div>
+        <div style="font-size: 32px; font-weight: bold; color: #8b5cf6;">
+            {{.SessionDurationDisplay}}
+        </div>
+    </div>
+</div>
+
+<!-- E-Commerce Metrics -->
+{{if .HasOrders}}
+<div class="card" style="margin-bottom: 30px;">
+    <h3 style="margin-bottom: 20px;">E-Commerce Performance</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+        <div style="text-align: center; padding: 20px; background: #f7fafc; border-radius: 6px;">
+            <div style="font-size: 12px; color: #666; margin-bottom: 6px;">Total Revenue</div>
+            <div style="font-size: 28px; font-weight: bold; color: #48bb78;">${{printf "%.2f" (index .RevenueMetrics "total_revenue")}}</div>
+        </div>
+        <div style="text-align: center; padding: 20px; background: #f7fafc; border-radius: 6px;">
+            <div style="font-size: 12px; color: #666; margin-bottom: 6px;">Orders</div>
+            <div style="font-size: 28px; font-weight: bold; color: #2563eb;">{{index .RevenueMetrics "total_orders"}}</div>
+        </div>
+        <div style="text-align: center; padding: 20px; background: #f7fafc; border-radius: 6px;">
+            <div style="font-size: 12px; color: #666; margin-bottom: 6px;">Avg. Order Value</div>
+            <div style="font-size: 28px; font-weight: bold; color: #f59e0b;">${{printf "%.2f" (index .RevenueMetrics "avg_order_value")}}</div>
+        </div>
+        <div style="text-align: center; padding: 20px; background: #f7fafc; border-radius: 6px;">
+            <div style="font-size: 12px; color: #666; margin-bottom: 6px;">Conversion Rate</div>
+            <div style="font-size: 28px; font-weight: bold; color: #8b5cf6;">{{printf "%.2f" .ConversionRate}}%</div>
+            <div style="font-size: 11px; color: #999; margin-top: 4px;">{{.ConvertedSessions}} of {{.TotalSessions}} sessions</div>
+        </div>
+        {{if gt .TotalCarts 0}}
+        <div style="text-align: center; padding: 20px; background: #f7fafc; border-radius: 6px;">
+            <div style="font-size: 12px; color: #666; margin-bottom: 6px;">Cart Abandonment</div>
+            <div style="font-size: 28px; font-weight: bold; color: #ef4444;">{{printf "%.1f" .AbandonmentRate}}%</div>
+            <div style="font-size: 11px; color: #999; margin-top: 4px;">{{.AbandonedCarts}} of {{.TotalCarts}} carts</div>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+<!-- Device Breakdown -->
+{{if .DeviceBreakdown}}
+<div class="card" style="margin-bottom: 30px;">
+    <h3 style="margin-bottom: 20px;">Device Breakdown</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">
+        {{if index .DeviceBreakdown "mobile"}}
+        <div style="text-align: center; padding: 16px; background: #f7fafc; border-radius: 6px;">
+            <div style="font-size: 12px; color: #666; margin-bottom: 6px;">Mobile</div>
+            <div style="font-size: 24px; font-weight: bold; color: #2563eb;">{{index .DeviceBreakdown "mobile"}}</div>
+        </div>
+        {{end}}
+        {{if index .DeviceBreakdown "tablet"}}
+        <div style="text-align: center; padding: 16px; background: #f7fafc; border-radius: 6px;">
+            <div style="font-size: 12px; color: #666; margin-bottom: 6px;">Tablet</div>
+            <div style="font-size: 24px; font-weight: bold; color: #48bb78;">{{index .DeviceBreakdown "tablet"}}</div>
+        </div>
+        {{end}}
+        {{if index .DeviceBreakdown "desktop"}}
+        <div style="text-align: center; padding: 16px; background: #f7fafc; border-radius: 6px;">
+            <div style="font-size: 12px; color: #666; margin-bottom: 6px;">Desktop</div>
+            <div style="font-size: 24px; font-weight: bold; color: #f59e0b;">{{index .DeviceBreakdown "desktop"}}</div>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+<!-- Current Activity (Real-time) -->
+{{if gt .ActiveUsers 0}}
+<div class="card" style="margin-bottom: 30px; border-left: 4px solid #48bb78;">
+    <h3 style="margin-bottom: 20px;">🟢 Live Activity (Last 5 minutes)</h3>
+    {{if .CurrentPages}}
+    <table>
+        <thead>
+            <tr>
+                <th style="text-align: left;">Page</th>
+                <th style="text-align: center;">Active Viewers</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .CurrentPages}}
+            <tr>
+                <td style="font-family: monospace; font-size: 14px;">{{index . "path"}}</td>
+                <td style="text-align: center; font-weight: bold; color: #48bb78;">{{index . "viewers"}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p style="text-align: center; color: #999; padding: 20px;">No active page views</p>
+    {{end}}
+</div>
+{{end}}
+
+<!-- Top Pages -->
+<div class="card" style="margin-bottom: 30px;">
+    <h3 style="margin-bottom: 20px;">Top Pages</h3>
+    {{if .TopPages}}
+    <table>
+        <thead>
+            <tr>
+                <th style="text-align: left;">Page</th>
+                <th style="text-align: center;">Views</th>
+                <th style="text-align: center;">Unique Visitors</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .TopPages}}
+            <tr>
+                <td style="font-family: monospace; font-size: 14px;">{{index . "path"}}</td>
+                <td style="text-align: center; font-weight: bold;">{{index . "views"}}</td>
+                <td style="text-align: center;">{{index . "unique_visitors"}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p style="text-align: center; color: #999; padding: 40px;">No pageview data yet</p>
+    {{end}}
+</div>
+
+<!-- Entry & Exit Pages -->
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+    <div class="card">
+        <h3 style="margin-bottom: 20px;">Top Entry Pages</h3>
+        {{if .EntryPages}}
+        <table>
+            <thead>
+                <tr>
+                    <th style="text-align: left;">Page</th>
+                    <th style="text-align: center;">Entries</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .EntryPages}}
+                <tr>
+                    <td style="font-family: monospace; font-size: 13px;">{{index . "path"}}</td>
+                    <td style="text-align: center; font-weight: bold;">{{index . "entries"}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{else}}
+        <p style="text-align: center; color: #999; padding: 30px;">No data</p>
+        {{end}}
+    </div>
+
+    <div class="card">
+        <h3 style="margin-bottom: 20px;">Top Exit Pages</h3>
+        {{if .ExitPages}}
+        <table>
+            <thead>
+                <tr>
+                    <th style="text-align: left;">Page</th>
+                    <th style="text-align: center;">Exits</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .ExitPages}}
+                <tr>
+                    <td style="font-family: monospace; font-size: 13px;">{{index . "path"}}</td>
+                    <td style="text-align: center; font-weight: bold;">{{index . "exits"}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{else}}
+        <p style="text-align: center; color: #999; padding: 30px;">No data</p>
+        {{end}}
+    </div>
+</div>
+
+<!-- Top Referrers -->
+<div class="card" style="margin-bottom: 30px;">
+    <h3 style="margin-bottom: 20px;">Top Referrers</h3>
+    {{if .TopReferrers}}
+    <table>
+        <thead>
+            <tr>
+                <th style="text-align: left;">Referrer</th>
+                <th style="text-align: center;">Visits</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .TopReferrers}}
+            <tr>
+                <td style="font-family: monospace; font-size: 14px; word-break: break-all;">
+                    {{$ref := index . "referrer"}}
+                    {{if eq $ref ""}}
+                        <em style="color: #999;">Direct / None</em>
+                    {{else}}
+                        {{$ref}}
+                    {{end}}
+                </td>
+                <td style="text-align: center; font-weight: bold;">{{index . "visits"}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p style="text-align: center; color: #999; padding: 40px;">No referrer data available</p>
+    {{end}}
+</div>
+
+<!-- Custom Events -->
+{{if .EventStats}}
+<div class="card">
+    <h3 style="margin-bottom: 20px;">Custom Events</h3>
+    <table>
+        <thead>
+            <tr>
+                <th style="text-align: left;">Event Name</th>
+                <th style="text-align: center;">Count</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .EventStats}}
+            {{if ne (index . "event_name") "heartbeat"}}
+            <tr>
+                <td style="font-family: monospace; font-size: 14px;">{{index . "event_name"}}</td>
+                <td style="text-align: center; font-weight: bold;">{{index . "count"}}</td>
+            </tr>
+            {{end}}
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}
+
+{{end}}

@@ -32,10 +32,29 @@ type Website struct {
 	ShippoAPIKey  string `json:"shippoApiKey"`
 	LabelFormat   string `json:"labelFormat"` // PDF, PDF_4x6, ZPLII, PNG
 
+	// Twilio
+	TwilioAccountSID string `json:"twilioAccountSid"`
+	TwilioAuthToken  string `json:"twilioAuthToken"`
+	TwilioFromPhone  string `json:"twilioFromPhone"`
+
 	// Email
 	EmailFromAddress string `json:"emailFromAddress"`
 	EmailFromName    string `json:"emailFromName"`
 	EmailReplyTo     string `json:"emailReplyTo"`
+
+	// IMAP (for receiving emails)
+	IMAPServer   string `json:"imapServer"`
+	IMAPPort     int    `json:"imapPort"`
+	IMAPUsername string `json:"imapUsername"`
+	IMAPPassword string `json:"imapPassword"`
+	IMAPUseTLS   bool   `json:"imapUseTLS"`
+
+	// SMTP (for sending emails)
+	SMTPServer   string `json:"smtpServer"`
+	SMTPPort     int    `json:"smtpPort"`
+	SMTPUsername string `json:"smtpUsername"`
+	SMTPPassword string `json:"smtpPassword"`
+	SMTPUseTLS   bool   `json:"smtpUseTLS"`
 
 	// Ecommerce
 	TaxRate      float64 `json:"taxRate"`
@@ -53,6 +72,12 @@ type Website struct {
 	ShipFromState   string `json:"shipFromState"`
 	ShipFromZip     string `json:"shipFromZip"`
 	ShipFromCountry string `json:"shipFromCountry"`
+
+	// SEO
+	RobotsTxt string `json:"robotsTxt"`
+
+	// Branding
+	Logo string `json:"logo"` // Path or URL to site logo for packing slips
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
@@ -272,10 +297,29 @@ func (s *AdminServer) GetAllWebsites() ([]Website, error) {
 					APIKey      string `json:"apiKey"`
 					LabelFormat string `json:"labelFormat"`
 				} `json:"shippo"`
+				Twilio struct {
+					AccountSID string `json:"accountSid"`
+					AuthToken  string `json:"authToken"`
+					FromPhone  string `json:"fromPhone"`
+				} `json:"twilio"`
 				Email struct {
 					FromAddress string `json:"fromAddress"`
 					FromName    string `json:"fromName"`
 					ReplyTo     string `json:"replyTo"`
+					IMAP        struct {
+						Server   string `json:"server"`
+						Port     int    `json:"port"`
+						Username string `json:"username"`
+						Password string `json:"password"`
+						UseTLS   bool   `json:"useTLS"`
+					} `json:"imap"`
+					SMTP struct {
+						Server   string `json:"server"`
+						Port     int    `json:"port"`
+						Username string `json:"username"`
+						Password string `json:"password"`
+						UseTLS   bool   `json:"useTLS"`
+					} `json:"smtp"`
 				} `json:"email"`
 				Ecommerce struct {
 					TaxRate      float64 `json:"taxRate"`
@@ -294,6 +338,8 @@ func (s *AdminServer) GetAllWebsites() ([]Website, error) {
 					Zip     string `json:"zip"`
 					Country string `json:"country"`
 				} `json:"shipFrom"`
+				RobotsTxt string `json:"robotsTxt"`
+				Logo      string `json:"logo"`
 			}
 
 			if err := json.Unmarshal(data, &config); err != nil {
@@ -319,9 +365,25 @@ func (s *AdminServer) GetAllWebsites() ([]Website, error) {
 				ShippoAPIKey: config.Shippo.APIKey,
 				LabelFormat:  config.Shippo.LabelFormat,
 
+				TwilioAccountSID: config.Twilio.AccountSID,
+				TwilioAuthToken:  config.Twilio.AuthToken,
+				TwilioFromPhone:  config.Twilio.FromPhone,
+
 				EmailFromAddress: config.Email.FromAddress,
 				EmailFromName:    config.Email.FromName,
 				EmailReplyTo:     config.Email.ReplyTo,
+
+				IMAPServer:   config.Email.IMAP.Server,
+				IMAPPort:     config.Email.IMAP.Port,
+				IMAPUsername: config.Email.IMAP.Username,
+				IMAPPassword: config.Email.IMAP.Password,
+				IMAPUseTLS:   config.Email.IMAP.UseTLS,
+
+				SMTPServer:   config.Email.SMTP.Server,
+				SMTPPort:     config.Email.SMTP.Port,
+				SMTPUsername: config.Email.SMTP.Username,
+				SMTPPassword: config.Email.SMTP.Password,
+				SMTPUseTLS:   config.Email.SMTP.UseTLS,
 
 				TaxRate:      config.Ecommerce.TaxRate,
 				ShippingCost: config.Ecommerce.ShippingCost,
@@ -336,6 +398,9 @@ func (s *AdminServer) GetAllWebsites() ([]Website, error) {
 				ShipFromState:   config.ShipFrom.State,
 				ShipFromZip:     config.ShipFrom.Zip,
 				ShipFromCountry: config.ShipFrom.Country,
+
+				RobotsTxt: config.RobotsTxt,
+				Logo:      config.Logo,
 			}
 
 			websites = append(websites, website)
@@ -435,6 +500,14 @@ func (s *AdminServer) UpdateWebsite(w Website) error {
 		config["shippo"].(map[string]interface{})["labelFormat"] = w.LabelFormat
 	}
 
+	// Twilio
+	if config["twilio"] == nil {
+		config["twilio"] = make(map[string]interface{})
+	}
+	config["twilio"].(map[string]interface{})["accountSid"] = w.TwilioAccountSID
+	config["twilio"].(map[string]interface{})["authToken"] = w.TwilioAuthToken
+	config["twilio"].(map[string]interface{})["fromPhone"] = w.TwilioFromPhone
+
 	// Email
 	if config["email"] == nil {
 		config["email"] = make(map[string]interface{})
@@ -442,6 +515,27 @@ func (s *AdminServer) UpdateWebsite(w Website) error {
 	config["email"].(map[string]interface{})["fromAddress"] = w.EmailFromAddress
 	config["email"].(map[string]interface{})["fromName"] = w.EmailFromName
 	config["email"].(map[string]interface{})["replyTo"] = w.EmailReplyTo
+
+	// IMAP
+	emailMap := config["email"].(map[string]interface{})
+	if emailMap["imap"] == nil {
+		emailMap["imap"] = make(map[string]interface{})
+	}
+	emailMap["imap"].(map[string]interface{})["server"] = w.IMAPServer
+	emailMap["imap"].(map[string]interface{})["port"] = w.IMAPPort
+	emailMap["imap"].(map[string]interface{})["username"] = w.IMAPUsername
+	emailMap["imap"].(map[string]interface{})["password"] = w.IMAPPassword
+	emailMap["imap"].(map[string]interface{})["useTLS"] = w.IMAPUseTLS
+
+	// SMTP
+	if emailMap["smtp"] == nil {
+		emailMap["smtp"] = make(map[string]interface{})
+	}
+	emailMap["smtp"].(map[string]interface{})["server"] = w.SMTPServer
+	emailMap["smtp"].(map[string]interface{})["port"] = w.SMTPPort
+	emailMap["smtp"].(map[string]interface{})["username"] = w.SMTPUsername
+	emailMap["smtp"].(map[string]interface{})["password"] = w.SMTPPassword
+	emailMap["smtp"].(map[string]interface{})["useTLS"] = w.SMTPUseTLS
 
 	// Ecommerce
 	if config["ecommerce"] == nil {
@@ -468,6 +562,16 @@ func (s *AdminServer) UpdateWebsite(w Website) error {
 	config["shipFrom"].(map[string]interface{})["state"] = w.ShipFromState
 	config["shipFrom"].(map[string]interface{})["zip"] = w.ShipFromZip
 	config["shipFrom"].(map[string]interface{})["country"] = w.ShipFromCountry
+
+	// robots.txt
+	if w.RobotsTxt != "" {
+		config["robotsTxt"] = w.RobotsTxt
+	}
+
+	// Logo
+	if w.Logo != "" {
+		config["logo"] = w.Logo
+	}
 
 	// Write back to disk
 	updatedData, err := json.MarshalIndent(config, "", "\t")
@@ -2050,6 +2154,60 @@ func (s *AdminServer) GetCustomer(websiteID string, customerID int) (Customer, e
 	return c, nil
 }
 
+// GetCustomerByEmail retrieves a customer by email address with statistics
+func (s *AdminServer) GetCustomerByEmail(websiteID string, email string) (*Customer, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			c.id, c.email, c.stripe_customer_id, c.first_name, c.last_name, c.phone,
+			c.created_at, c.updated_at,
+			COUNT(CASE WHEN o.payment_status = 'paid' THEN 1 END) as order_count,
+			COALESCE(SUM(CASE WHEN o.payment_status = 'paid' THEN o.total ELSE 0 END), 0) as total_spent,
+			MIN(CASE WHEN o.payment_status = 'paid' THEN o.created_at END) as first_order,
+			MAX(CASE WHEN o.payment_status = 'paid' THEN o.created_at END) as last_order
+		FROM customers c
+		LEFT JOIN orders o ON c.id = o.customer_id
+		WHERE c.email = ?
+		GROUP BY c.id, c.email, c.stripe_customer_id, c.first_name, c.last_name, c.phone, c.created_at, c.updated_at
+	`
+
+	var c Customer
+	var stripeCustomerID, phone sql.NullString
+	var firstOrder, lastOrder sql.NullTime
+
+	err = db.QueryRow(query, email).Scan(
+		&c.ID, &c.Email, &stripeCustomerID, &c.FirstName, &c.LastName, &phone,
+		&c.CreatedAt, &c.UpdatedAt,
+		&c.OrderCount, &c.TotalSpent, &firstOrder, &lastOrder,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // No customer found, not an error
+		}
+		return nil, err
+	}
+
+	if stripeCustomerID.Valid {
+		c.StripeCustomerID = stripeCustomerID.String
+	}
+	if phone.Valid {
+		c.Phone = phone.String
+	}
+	if firstOrder.Valid {
+		c.FirstOrder = &firstOrder.Time
+	}
+	if lastOrder.Valid {
+		c.LastOrder = &lastOrder.Time
+	}
+
+	return &c, nil
+}
+
 // GetCustomerOrders retrieves all orders for a specific customer
 func (s *AdminServer) GetCustomerOrders(websiteID string, customerID int) ([]Order, error) {
 	db, err := s.GetWebsiteConnection(websiteID)
@@ -2236,5 +2394,1099 @@ func (s *AdminServer) DeleteSMSSignup(websiteID string, signupID int) error {
 
 	query := `DELETE FROM sms_signups WHERE id = ?`
 	_, err = db.Exec(query, signupID)
+	return err
+}
+
+// GetVerifiedSMSSignups retrieves only verified SMS signups with filters
+func (s *AdminServer) GetVerifiedSMSSignups(websiteID string, filters SMSSignupFilters) ([]SMSSignup, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT id, COALESCE(country_code, '+1'), phone, COALESCE(email, ''), COALESCE(source, ''), created_at
+		FROM sms_signups
+		WHERE verified = 1 AND unsubscribed = 0
+	`
+
+	var args []interface{}
+
+	// Filter by country code
+	if filters.CountryCode != "" {
+		query += ` AND country_code = ?`
+		args = append(args, filters.CountryCode)
+	}
+
+	// Filter by source
+	if filters.Source != "" {
+		query += ` AND source = ?`
+		args = append(args, filters.Source)
+	}
+
+	// Filter by date range
+	if filters.DateFrom != "" {
+		query += ` AND created_at >= ?`
+		args = append(args, filters.DateFrom+" 00:00:00")
+	}
+	if filters.DateTo != "" {
+		query += ` AND created_at <= ?`
+		args = append(args, filters.DateTo+" 23:59:59")
+	}
+
+	// Sorting
+	switch filters.Sort {
+	case "date_asc":
+		query += ` ORDER BY created_at ASC`
+	case "phone_asc":
+		query += ` ORDER BY phone ASC`
+	case "phone_desc":
+		query += ` ORDER BY phone DESC`
+	default:
+		query += ` ORDER BY created_at DESC`
+	}
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var signups []SMSSignup
+	for rows.Next() {
+		var s SMSSignup
+		err := rows.Scan(&s.ID, &s.CountryCode, &s.Phone, &s.Email, &s.Source, &s.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		signups = append(signups, s)
+	}
+
+	return signups, nil
+}
+
+// ===============================
+// Analytics Queries
+// ===============================
+
+// GetPageViewStats returns basic pageview statistics for a date range
+func (s *AdminServer) GetPageViewStats(websiteID string, startDate, endDate time.Time) (map[string]interface{}, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	stats := make(map[string]interface{})
+
+	// Total pageviews
+	var totalViews int
+	err = db.QueryRow(`
+		SELECT COUNT(*) FROM analytics_pageviews
+		WHERE created_at BETWEEN ? AND ?
+	`, startDate, endDate).Scan(&totalViews)
+	if err != nil {
+		return nil, err
+	}
+	stats["total_views"] = totalViews
+
+	// Unique sessions
+	var uniqueSessions int
+	err = db.QueryRow(`
+		SELECT COUNT(DISTINCT session_id) FROM analytics_pageviews
+		WHERE created_at BETWEEN ? AND ?
+	`, startDate, endDate).Scan(&uniqueSessions)
+	if err != nil {
+		return nil, err
+	}
+	stats["unique_sessions"] = uniqueSessions
+
+	return stats, nil
+}
+
+// GetTopPages returns the most visited pages for a date range
+func (s *AdminServer) GetTopPages(websiteID string, startDate, endDate time.Time, limit int) ([]map[string]interface{}, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT path, COUNT(*) as views, COUNT(DISTINCT session_id) as unique_visitors
+		FROM analytics_pageviews
+		WHERE created_at BETWEEN ? AND ?
+		GROUP BY path
+		ORDER BY views DESC
+		LIMIT ?
+	`
+
+	rows, err := db.Query(query, startDate, endDate, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pages []map[string]interface{}
+	for rows.Next() {
+		var path string
+		var views, uniqueVisitors int
+		err := rows.Scan(&path, &views, &uniqueVisitors)
+		if err != nil {
+			return nil, err
+		}
+		pages = append(pages, map[string]interface{}{
+			"path":            path,
+			"views":           views,
+			"unique_visitors": uniqueVisitors,
+		})
+	}
+
+	return pages, nil
+}
+
+// GetTopReferrers returns the top referrers for a date range
+func (s *AdminServer) GetTopReferrers(websiteID string, startDate, endDate time.Time, limit int) ([]map[string]interface{}, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT referrer, COUNT(*) as visits
+		FROM analytics_pageviews
+		WHERE created_at BETWEEN ? AND ?
+		AND referrer IS NOT NULL
+		AND referrer != ''
+		GROUP BY referrer
+		ORDER BY visits DESC
+		LIMIT ?
+	`
+
+	rows, err := db.Query(query, startDate, endDate, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var referrers []map[string]interface{}
+	for rows.Next() {
+		var referrer string
+		var visits int
+		err := rows.Scan(&referrer, &visits)
+		if err != nil {
+			return nil, err
+		}
+		referrers = append(referrers, map[string]interface{}{
+			"referrer": referrer,
+			"visits":   visits,
+		})
+	}
+
+	return referrers, nil
+}
+
+// GetEventStats returns statistics for custom events in a date range
+func (s *AdminServer) GetEventStats(websiteID string, startDate, endDate time.Time, limit int) ([]map[string]interface{}, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT event_name, COUNT(*) as count
+		FROM analytics_events
+		WHERE created_at BETWEEN ? AND ?
+		GROUP BY event_name
+		ORDER BY count DESC
+		LIMIT ?
+	`
+
+	rows, err := db.Query(query, startDate, endDate, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []map[string]interface{}
+	for rows.Next() {
+		var eventName string
+		var count int
+		err := rows.Scan(&eventName, &count)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, map[string]interface{}{
+			"event_name": eventName,
+			"count":      count,
+		})
+	}
+
+	return events, nil
+}
+
+// ===============================
+// Real-Time Analytics
+// ===============================
+
+// GetActiveUsers returns count of users active in the last N minutes
+func (s *AdminServer) GetActiveUsers(websiteID string, minutesAgo int) (int, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	cutoffTime := time.Now().Add(-time.Duration(minutesAgo) * time.Minute)
+
+	query := `
+		SELECT COUNT(DISTINCT session_id) as active_users
+		FROM (
+			SELECT session_id, MAX(created_at) as last_activity
+			FROM analytics_pageviews
+			WHERE created_at >= ?
+			GROUP BY session_id
+			UNION
+			SELECT session_id, MAX(created_at) as last_activity
+			FROM analytics_events
+			WHERE created_at >= ?
+			GROUP BY session_id
+		) as combined
+	`
+
+	var activeUsers int
+	err = db.QueryRow(query, cutoffTime, cutoffTime).Scan(&activeUsers)
+	if err != nil {
+		return 0, err
+	}
+
+	return activeUsers, nil
+}
+
+// GetCurrentPages returns pages currently being viewed by active users
+func (s *AdminServer) GetCurrentPages(websiteID string, minutesAgo int) ([]map[string]interface{}, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	cutoffTime := time.Now().Add(-time.Duration(minutesAgo) * time.Minute)
+
+	query := `
+		SELECT path, COUNT(DISTINCT session_id) as active_viewers
+		FROM (
+			SELECT session_id, path, created_at,
+				ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY created_at DESC) as rn
+			FROM analytics_pageviews
+			WHERE created_at >= ?
+		) as recent_views
+		WHERE rn = 1
+		GROUP BY path
+		ORDER BY active_viewers DESC
+		LIMIT 20
+	`
+
+	rows, err := db.Query(query, cutoffTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pages []map[string]interface{}
+	for rows.Next() {
+		var path string
+		var viewers int
+		err := rows.Scan(&path, &viewers)
+		if err != nil {
+			return nil, err
+		}
+		pages = append(pages, map[string]interface{}{
+			"path":    path,
+			"viewers": viewers,
+		})
+	}
+
+	return pages, nil
+}
+
+// ===============================
+// Engagement Metrics
+// ===============================
+
+// GetBounceRate returns the bounce rate (single-page sessions) for a date range
+func (s *AdminServer) GetBounceRate(websiteID string, startDate, endDate time.Time) (float64, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			COUNT(DISTINCT CASE WHEN pageview_count = 1 THEN session_id END) as bounced_sessions,
+			COUNT(DISTINCT session_id) as total_sessions
+		FROM (
+			SELECT session_id, COUNT(*) as pageview_count
+			FROM analytics_pageviews
+			WHERE created_at BETWEEN ? AND ?
+			GROUP BY session_id
+		) as session_stats
+	`
+
+	var bouncedSessions, totalSessions int
+	err = db.QueryRow(query, startDate, endDate).Scan(&bouncedSessions, &totalSessions)
+	if err != nil {
+		return 0, err
+	}
+
+	if totalSessions == 0 {
+		return 0, nil
+	}
+
+	bounceRate := (float64(bouncedSessions) / float64(totalSessions)) * 100
+	return bounceRate, nil
+}
+
+// GetAverageSessionDuration returns average session duration in seconds
+func (s *AdminServer) GetAverageSessionDuration(websiteID string, startDate, endDate time.Time) (float64, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT AVG(duration) as avg_duration
+		FROM (
+			SELECT
+				session_id,
+				TIMESTAMPDIFF(SECOND, MIN(created_at), MAX(created_at)) as duration
+			FROM analytics_pageviews
+			WHERE created_at BETWEEN ? AND ?
+			GROUP BY session_id
+			HAVING COUNT(*) > 1
+		) as session_durations
+	`
+
+	var avgDuration sql.NullFloat64
+	err = db.QueryRow(query, startDate, endDate).Scan(&avgDuration)
+	if err != nil {
+		return 0, err
+	}
+
+	if !avgDuration.Valid {
+		return 0, nil
+	}
+
+	return avgDuration.Float64, nil
+}
+
+// GetDeviceBreakdown returns breakdown of traffic by device type
+func (s *AdminServer) GetDeviceBreakdown(websiteID string, startDate, endDate time.Time) (map[string]int, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	// Categorize by screen width since we track that
+	query := `
+		SELECT
+			CASE
+				WHEN screen_width < 768 THEN 'mobile'
+				WHEN screen_width < 1024 THEN 'tablet'
+				ELSE 'desktop'
+			END as device_type,
+			COUNT(DISTINCT session_id) as sessions
+		FROM analytics_pageviews
+		WHERE created_at BETWEEN ? AND ?
+		GROUP BY device_type
+	`
+
+	rows, err := db.Query(query, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	breakdown := make(map[string]int)
+	for rows.Next() {
+		var deviceType string
+		var sessions int
+		err := rows.Scan(&deviceType, &sessions)
+		if err != nil {
+			return nil, err
+		}
+		breakdown[deviceType] = sessions
+	}
+
+	return breakdown, nil
+}
+
+// GetEntryPages returns the top pages where users enter the site
+func (s *AdminServer) GetEntryPages(websiteID string, startDate, endDate time.Time, limit int) ([]map[string]interface{}, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT path, COUNT(*) as entries
+		FROM (
+			SELECT session_id, path,
+				ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY created_at ASC) as rn
+			FROM analytics_pageviews
+			WHERE created_at BETWEEN ? AND ?
+		) as first_pages
+		WHERE rn = 1
+		GROUP BY path
+		ORDER BY entries DESC
+		LIMIT ?
+	`
+
+	rows, err := db.Query(query, startDate, endDate, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pages []map[string]interface{}
+	for rows.Next() {
+		var path string
+		var entries int
+		err := rows.Scan(&path, &entries)
+		if err != nil {
+			return nil, err
+		}
+		pages = append(pages, map[string]interface{}{
+			"path":    path,
+			"entries": entries,
+		})
+	}
+
+	return pages, nil
+}
+
+// GetExitPages returns the top pages where users leave the site
+func (s *AdminServer) GetExitPages(websiteID string, startDate, endDate time.Time, limit int) ([]map[string]interface{}, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT path, COUNT(*) as exits
+		FROM (
+			SELECT session_id, path,
+				ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY created_at DESC) as rn
+			FROM analytics_pageviews
+			WHERE created_at BETWEEN ? AND ?
+		) as last_pages
+		WHERE rn = 1
+		GROUP BY path
+		ORDER BY exits DESC
+		LIMIT ?
+	`
+
+	rows, err := db.Query(query, startDate, endDate, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pages []map[string]interface{}
+	for rows.Next() {
+		var path string
+		var exits int
+		err := rows.Scan(&path, &exits)
+		if err != nil {
+			return nil, err
+		}
+		pages = append(pages, map[string]interface{}{
+			"path":  path,
+			"exits": exits,
+		})
+	}
+
+	return pages, nil
+}
+
+// ===============================
+// E-Commerce Analytics
+// ===============================
+
+// GetConversionRate returns the conversion rate (% of sessions that result in purchase)
+func (s *AdminServer) GetConversionRate(websiteID string, startDate, endDate time.Time) (float64, int, int, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			COUNT(DISTINCT pv.session_id) as total_sessions,
+			COUNT(DISTINCT CASE WHEN e.event_name = 'purchase' THEN pv.session_id END) as converted_sessions
+		FROM analytics_pageviews pv
+		LEFT JOIN analytics_events e ON pv.session_id = e.session_id
+			AND e.event_name = 'purchase'
+			AND e.created_at BETWEEN ? AND ?
+		WHERE pv.created_at BETWEEN ? AND ?
+	`
+
+	var totalSessions, convertedSessions int
+	err = db.QueryRow(query, startDate, endDate, startDate, endDate).Scan(&totalSessions, &convertedSessions)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	var conversionRate float64
+	if totalSessions > 0 {
+		conversionRate = (float64(convertedSessions) / float64(totalSessions)) * 100
+	}
+
+	return conversionRate, convertedSessions, totalSessions, nil
+}
+
+// GetCartAbandonmentRate returns cart abandonment metrics
+func (s *AdminServer) GetCartAbandonmentRate(websiteID string, startDate, endDate time.Time) (float64, int, int, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			COUNT(DISTINCT CASE WHEN added.session_id IS NOT NULL THEN added.session_id END) as sessions_with_cart,
+			COUNT(DISTINCT CASE WHEN purchased.session_id IS NOT NULL THEN purchased.session_id END) as sessions_with_purchase
+		FROM (
+			SELECT DISTINCT session_id
+			FROM analytics_events
+			WHERE event_name = 'add_to_cart'
+			AND created_at BETWEEN ? AND ?
+		) as added
+		LEFT JOIN (
+			SELECT DISTINCT session_id
+			FROM analytics_events
+			WHERE event_name = 'purchase'
+			AND created_at BETWEEN ? AND ?
+		) as purchased ON added.session_id = purchased.session_id
+	`
+
+	var sessionsWithCart, sessionsWithPurchase int
+	err = db.QueryRow(query, startDate, endDate, startDate, endDate).Scan(&sessionsWithCart, &sessionsWithPurchase)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	var abandonmentRate float64
+	if sessionsWithCart > 0 {
+		abandoned := sessionsWithCart - sessionsWithPurchase
+		abandonmentRate = (float64(abandoned) / float64(sessionsWithCart)) * 100
+	}
+
+	return abandonmentRate, sessionsWithCart - sessionsWithPurchase, sessionsWithCart, nil
+}
+
+// GetRevenueMetrics returns revenue statistics for a date range
+func (s *AdminServer) GetRevenueMetrics(websiteID string, startDate, endDate time.Time) (map[string]interface{}, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			COUNT(*) as total_orders,
+			SUM(total) as total_revenue,
+			AVG(total) as avg_order_value,
+			MAX(total) as highest_order
+		FROM orders
+		WHERE payment_status = 'paid'
+		AND created_at BETWEEN ? AND ?
+	`
+
+	var totalOrders int
+	var totalRevenue, avgOrderValue, highestOrder sql.NullFloat64
+
+	err = db.QueryRow(query, startDate, endDate).Scan(&totalOrders, &totalRevenue, &avgOrderValue, &highestOrder)
+	if err != nil {
+		return nil, err
+	}
+
+	metrics := map[string]interface{}{
+		"total_orders": totalOrders,
+		"total_revenue": func() float64 {
+			if totalRevenue.Valid {
+				return totalRevenue.Float64
+			}
+			return 0
+		}(),
+		"avg_order_value": func() float64 {
+			if avgOrderValue.Valid {
+				return avgOrderValue.Float64
+			}
+			return 0
+		}(),
+		"highest_order": func() float64 {
+			if highestOrder.Valid {
+				return highestOrder.Float64
+			}
+			return 0
+		}(),
+	}
+
+	return metrics, nil
+}
+
+// Overview Dashboard Queries
+
+type OverviewStats struct {
+	// Content Stats
+	TotalArticles   int
+	PublishedArticles int
+	DraftArticles   int
+
+	// Analytics Stats
+	TotalPageviews    int
+	PageviewsToday    int
+	PageviewsThisWeek int
+	PageviewsThisMonth int
+	UniqueVisitorsToday int
+
+	// E-commerce Stats
+	TotalProducts   int
+	ActiveProducts  int
+	TotalOrders     int
+	TotalRevenue    float64
+	TotalCustomers  int
+
+	// Recent Activity
+	OrdersToday     int
+	RevenueToday    float64
+	OrdersThisWeek  int
+	RevenueThisWeek float64
+	OrdersThisMonth int
+	RevenueThisMonth float64
+
+	// Marketing Stats
+	TotalSMSSignups int
+
+	// Messages Stats
+	UnreadMessages int
+	TotalMessages  int
+}
+
+func (s *AdminServer) GetOverviewStats(websiteID string) (*OverviewStats, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	stats := &OverviewStats{}
+
+	// Content Stats
+	err = db.QueryRow(`
+		SELECT
+			COUNT(*) as total,
+			SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) as published,
+			SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) as draft
+		FROM articles_unified
+	`).Scan(&stats.TotalArticles, &stats.PublishedArticles, &stats.DraftArticles)
+	if err != nil && err != sql.ErrNoRows {
+		// If table doesn't exist, continue with zeros
+		stats.TotalArticles = 0
+		stats.PublishedArticles = 0
+		stats.DraftArticles = 0
+	}
+
+	// E-commerce Stats - Products
+	err = db.QueryRow(`
+		SELECT
+			COUNT(*) as total,
+			SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active
+		FROM products_unified
+	`).Scan(&stats.TotalProducts, &stats.ActiveProducts)
+	if err != nil && err != sql.ErrNoRows {
+		stats.TotalProducts = 0
+		stats.ActiveProducts = 0
+	}
+
+	// E-commerce Stats - Orders
+	var totalRevenue sql.NullFloat64
+	err = db.QueryRow(`
+		SELECT
+			COUNT(*) as total_orders,
+			COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_revenue
+		FROM orders
+	`).Scan(&stats.TotalOrders, &totalRevenue)
+	if err != nil && err != sql.ErrNoRows {
+		stats.TotalOrders = 0
+		stats.TotalRevenue = 0
+	} else if totalRevenue.Valid {
+		stats.TotalRevenue = totalRevenue.Float64
+	}
+
+	// E-commerce Stats - Customers
+	err = db.QueryRow(`SELECT COUNT(*) FROM customers`).Scan(&stats.TotalCustomers)
+	if err != nil && err != sql.ErrNoRows {
+		stats.TotalCustomers = 0
+	}
+
+	// Today's Activity
+	todayStart := time.Now().Truncate(24 * time.Hour)
+	var revenueToday sql.NullFloat64
+	err = db.QueryRow(`
+		SELECT
+			COUNT(*) as orders_today,
+			COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as revenue_today
+		FROM orders
+		WHERE created_at >= ?
+	`, todayStart).Scan(&stats.OrdersToday, &revenueToday)
+	if err != nil && err != sql.ErrNoRows {
+		stats.OrdersToday = 0
+		stats.RevenueToday = 0
+	} else if revenueToday.Valid {
+		stats.RevenueToday = revenueToday.Float64
+	}
+
+	// This Week's Activity
+	weekStart := time.Now().AddDate(0, 0, -7)
+	var revenueWeek sql.NullFloat64
+	err = db.QueryRow(`
+		SELECT
+			COUNT(*) as orders_week,
+			COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as revenue_week
+		FROM orders
+		WHERE created_at >= ?
+	`, weekStart).Scan(&stats.OrdersThisWeek, &revenueWeek)
+	if err != nil && err != sql.ErrNoRows {
+		stats.OrdersThisWeek = 0
+		stats.RevenueThisWeek = 0
+	} else if revenueWeek.Valid {
+		stats.RevenueThisWeek = revenueWeek.Float64
+	}
+
+	// This Month's Activity
+	monthStart := time.Now().AddDate(0, 0, -30)
+	var revenueMonth sql.NullFloat64
+	err = db.QueryRow(`
+		SELECT
+			COUNT(*) as orders_month,
+			COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as revenue_month
+		FROM orders
+		WHERE created_at >= ?
+	`, monthStart).Scan(&stats.OrdersThisMonth, &revenueMonth)
+	if err != nil && err != sql.ErrNoRows {
+		stats.OrdersThisMonth = 0
+		stats.RevenueThisMonth = 0
+	} else if revenueMonth.Valid {
+		stats.RevenueThisMonth = revenueMonth.Float64
+	}
+
+	// Marketing Stats
+	err = db.QueryRow(`SELECT COUNT(*) FROM sms_signups`).Scan(&stats.TotalSMSSignups)
+	if err != nil && err != sql.ErrNoRows {
+		stats.TotalSMSSignups = 0
+	}
+
+	// Analytics Stats
+	err = db.QueryRow(`SELECT COUNT(*) FROM analytics_pageviews`).Scan(&stats.TotalPageviews)
+	if err != nil && err != sql.ErrNoRows {
+		stats.TotalPageviews = 0
+	}
+
+	// Pageviews Today
+	err = db.QueryRow(`
+		SELECT COUNT(*) FROM analytics_pageviews
+		WHERE created_at >= ?
+	`, todayStart).Scan(&stats.PageviewsToday)
+	if err != nil && err != sql.ErrNoRows {
+		stats.PageviewsToday = 0
+	}
+
+	// Pageviews This Week
+	err = db.QueryRow(`
+		SELECT COUNT(*) FROM analytics_pageviews
+		WHERE created_at >= ?
+	`, weekStart).Scan(&stats.PageviewsThisWeek)
+	if err != nil && err != sql.ErrNoRows {
+		stats.PageviewsThisWeek = 0
+	}
+
+	// Pageviews This Month
+	err = db.QueryRow(`
+		SELECT COUNT(*) FROM analytics_pageviews
+		WHERE created_at >= ?
+	`, monthStart).Scan(&stats.PageviewsThisMonth)
+	if err != nil && err != sql.ErrNoRows {
+		stats.PageviewsThisMonth = 0
+	}
+
+	// Unique Visitors Today
+	err = db.QueryRow(`
+		SELECT COUNT(DISTINCT session_id) FROM analytics_pageviews
+		WHERE created_at >= ?
+	`, todayStart).Scan(&stats.UniqueVisitorsToday)
+	if err != nil && err != sql.ErrNoRows {
+		stats.UniqueVisitorsToday = 0
+	}
+
+	// Messages Stats
+	err = db.QueryRow(`SELECT COUNT(*) FROM messages WHERE status = 'unread'`).Scan(&stats.UnreadMessages)
+	if err != nil && err != sql.ErrNoRows {
+		stats.UnreadMessages = 0
+	}
+
+	err = db.QueryRow(`SELECT COUNT(*) FROM messages`).Scan(&stats.TotalMessages)
+	if err != nil && err != sql.ErrNoRows {
+		stats.TotalMessages = 0
+	}
+
+	return stats, nil
+}
+
+type RecentOrder struct {
+	ID            int
+	OrderNumber   string
+	CustomerName  string
+	CustomerEmail string
+	Total         float64
+	PaymentStatus string
+	CreatedAt     time.Time
+}
+
+func (s *AdminServer) GetRecentOrders(websiteID string, limit int) ([]RecentOrder, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			id,
+			order_number,
+			customer_name,
+			customer_email,
+			total,
+			payment_status,
+			created_at
+		FROM orders
+		ORDER BY created_at DESC
+		LIMIT ?
+	`
+
+	rows, err := db.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []RecentOrder
+	for rows.Next() {
+		var order RecentOrder
+		err := rows.Scan(
+			&order.ID,
+			&order.OrderNumber,
+			&order.CustomerName,
+			&order.CustomerEmail,
+			&order.Total,
+			&order.PaymentStatus,
+			&order.CreatedAt,
+		)
+		if err != nil {
+			continue
+		}
+		orders = append(orders, order)
+	}
+
+	return orders, nil
+}
+
+// Message Management Queries
+
+type Message struct {
+	ID           int
+	Name         string
+	Email        string
+	Message      string
+	Status       string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	ReplyCount   int
+	LastReplyAt  *time.Time
+}
+
+type MessageWithReplies struct {
+	ID        int
+	Name      string
+	Email     string
+	Message   string
+	Status    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Replies   []MessageReply
+}
+
+type MessageReply struct {
+	ID        int
+	MessageID int
+	ReplyText string
+	SentAt    time.Time
+	SentBy    string
+}
+
+func (s *AdminServer) GetMessages(websiteID string) ([]Message, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			m.id,
+			m.name,
+			m.email,
+			m.message,
+			m.status,
+			m.created_at,
+			m.updated_at,
+			COALESCE(COUNT(r.id), 0) as reply_count,
+			MAX(r.sent_at) as last_reply_at
+		FROM messages m
+		LEFT JOIN message_replies r ON m.id = r.message_id
+		GROUP BY m.id, m.name, m.email, m.message, m.status, m.created_at, m.updated_at
+		ORDER BY m.created_at DESC
+	`
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []Message
+	for rows.Next() {
+		var msg Message
+		err := rows.Scan(
+			&msg.ID,
+			&msg.Name,
+			&msg.Email,
+			&msg.Message,
+			&msg.Status,
+			&msg.CreatedAt,
+			&msg.UpdatedAt,
+			&msg.ReplyCount,
+			&msg.LastReplyAt,
+		)
+		if err != nil {
+			continue
+		}
+		messages = append(messages, msg)
+	}
+
+	return messages, nil
+}
+
+func (s *AdminServer) GetMessage(websiteID string, messageID int) (*MessageWithReplies, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	// Get the message
+	messageQuery := `
+		SELECT id, name, email, message, status, created_at, updated_at
+		FROM messages
+		WHERE id = ?
+	`
+
+	var msg MessageWithReplies
+	err = db.QueryRow(messageQuery, messageID).Scan(
+		&msg.ID,
+		&msg.Name,
+		&msg.Email,
+		&msg.Message,
+		&msg.Status,
+		&msg.CreatedAt,
+		&msg.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get replies
+	repliesQuery := `
+		SELECT id, message_id, reply_text, sent_at, sent_by
+		FROM message_replies
+		WHERE message_id = ?
+		ORDER BY sent_at ASC
+	`
+
+	rows, err := db.Query(repliesQuery, messageID)
+	if err != nil {
+		return &msg, nil // Return message even if replies fail
+	}
+	defer rows.Close()
+
+	var replies []MessageReply
+	for rows.Next() {
+		var reply MessageReply
+		err := rows.Scan(
+			&reply.ID,
+			&reply.MessageID,
+			&reply.ReplyText,
+			&reply.SentAt,
+			&reply.SentBy,
+		)
+		if err != nil {
+			continue
+		}
+		replies = append(replies, reply)
+	}
+
+	msg.Replies = replies
+	return &msg, nil
+}
+
+func (s *AdminServer) GetUnreadMessageCount(websiteID string) (int, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	query := `SELECT COUNT(*) FROM messages WHERE status = 'unread'`
+	var count int
+	err = db.QueryRow(query).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
+
+func (s *AdminServer) DeleteMessage(websiteID string, messageID int) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	// Delete the message (replies will be cascade deleted due to FOREIGN KEY constraint)
+	query := `DELETE FROM messages WHERE id = ?`
+	_, err = db.Exec(query, messageID)
 	return err
 }

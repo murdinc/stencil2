@@ -18,6 +18,7 @@ import (
 	"github.com/murdinc/stencil2/admin"
 	"github.com/murdinc/stencil2/configs"
 	"github.com/murdinc/stencil2/frontend"
+	"github.com/murdinc/stencil2/utils"
 )
 
 // serveCmd represents the serve command
@@ -39,6 +40,9 @@ func init() {
 }
 
 func serve() {
+
+	// Set production mode for cookie security
+	utils.SetProductionMode(ProdMode)
 
 	// Read in the env config
 	envConfig, err := configs.ReadEnvironmentConfig(ProdMode, HideErrors)
@@ -92,6 +96,10 @@ func serve() {
 		if err != nil {
 			log.Printf("Warning: Failed to start admin server: %v", err)
 		} else {
+			// Start email polling service
+			adminServer.StartEmailPolling()
+
+			// Start admin HTTP server
 			go func() {
 				if err := adminServer.Start(); err != nil {
 					log.Printf("Admin server error: %v", err)

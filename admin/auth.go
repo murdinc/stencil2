@@ -1,11 +1,12 @@
 package admin
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
 	"time"
+
+	"github.com/murdinc/stencil2/utils"
 )
 
 const (
@@ -15,20 +16,6 @@ const (
 
 // Session storage (in-memory for now, could be moved to database)
 var sessions = make(map[string]time.Time)
-
-// generateSessionKey generates a random session key
-func generateSessionKey() string {
-	bytes := make([]byte, 32)
-	rand.Read(bytes)
-	return hex.EncodeToString(bytes)
-}
-
-// generateSessionID generates a new session ID
-func generateSessionID() string {
-	bytes := make([]byte, 32)
-	rand.Read(bytes)
-	return hex.EncodeToString(bytes)
-}
 
 // hashPassword creates a SHA256 hash of the password
 func hashPassword(password string) string {
@@ -45,18 +32,10 @@ func (s *AdminServer) verifyPassword(password string) bool {
 
 // createSession creates a new session for the user
 func (s *AdminServer) createSession(w http.ResponseWriter) string {
-	sessionID := generateSessionID()
+	sessionID := utils.GenerateSessionID()
 	sessions[sessionID] = time.Now().Add(SessionDuration)
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     SessionCookieName,
-		Value:    sessionID,
-		Path:     "/",
-		MaxAge:   int(SessionDuration.Seconds()),
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   false, // Set to true in production with HTTPS
-	})
+	utils.SetCookie(w, SessionCookieName, sessionID, "/", int(SessionDuration.Seconds()))
 
 	return sessionID
 }
@@ -92,13 +71,7 @@ func isSessionValid(sessionID string) bool {
 // clearSession removes the session
 func clearSession(w http.ResponseWriter, sessionID string) {
 	delete(sessions, sessionID)
-	http.SetCookie(w, &http.Cookie{
-		Name:     SessionCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
+	utils.ClearCookie(w, SessionCookieName, "/")
 }
 
 // requireAuth middleware ensures the user is authenticated

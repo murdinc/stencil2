@@ -1,0 +1,252 @@
+{{define "content"}}
+<div class="content-header">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <div>
+            <h2>{{.Website.SiteName}}</h2>
+            <p>Site overview and quick stats</p>
+        </div>
+        <div id="active-users-badge" style="background: #48bb78; color: white; padding: 10px 16px; border-radius: 6px; text-align: center; min-width: 100px; box-shadow: 0 1px 4px rgba(72, 187, 120, 0.2);">
+            <div style="font-size: 24px; font-weight: 700; line-height: 1;">{{.ActiveUsers}}</div>
+            <div style="font-size: 11px; margin-top: 3px; opacity: 0.9;">Active Users</div>
+            <div style="font-size: 10px; margin-top: 2px; opacity: 0.7;">Live now</div>
+        </div>
+    </div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <a href="/site/{{.Website.ID}}/articles/new" class="btn btn-success" style="padding: 6px 12px; font-size: 13px;">+ Article</a>
+        <a href="/site/{{.Website.ID}}/products/new" class="btn btn-success" style="padding: 6px 12px; font-size: 13px;">+ Product</a>
+        <a href="/site/{{.Website.ID}}/analytics" class="btn" style="padding: 6px 12px; font-size: 13px;">Analytics</a>
+        <a href="/site/{{.Website.ID}}/settings" class="btn" style="padding: 6px 12px; font-size: 13px;">Settings</a>
+    </div>
+</div>
+
+<!-- Recent Activity & Messages -->
+<div style="margin-bottom: 16px;">
+    <h3 style="margin-bottom: 10px; color: #333; font-size: 16px;">Recent Activity</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
+        <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px;">
+                <div>
+                    <div style="font-size: 32px; font-weight: 700; line-height: 1; color: white;">{{.Stats.OrdersToday}}</div>
+                    <div style="font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.3px; margin-top: 4px;">Orders Today</div>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 24px; font-weight: 700; color: white;">${{printf "%.0f" .Stats.RevenueToday}}</div>
+                    <div style="font-size: 10px; color: rgba(255,255,255,0.8);">revenue</div>
+                </div>
+            </div>
+            <div style="font-size: 10px; color: rgba(255,255,255,0.7); padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);">
+                {{.Stats.OrdersThisWeek}} orders (7d) • ${{printf "%.0f" .Stats.RevenueThisWeek}} &nbsp;|&nbsp; {{.Stats.OrdersThisMonth}} orders (30d) • ${{printf "%.0f" .Stats.RevenueThisMonth}}
+            </div>
+        </div>
+        {{if gt .Stats.TotalMessages 0}}
+        <div class="stat-card" style="background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%); color: white; padding: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px;">
+                <div>
+                    <div style="font-size: 32px; font-weight: 700; line-height: 1; color: white;">{{.Stats.UnreadMessages}}</div>
+                    <div style="font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.3px; margin-top: 4px;">Unread Messages</div>
+                </div>
+            </div>
+            <div style="font-size: 10px; color: rgba(255,255,255,0.7); padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);">
+                {{.Stats.TotalMessages}} total messages &nbsp;|&nbsp; <a href="/site/{{.Website.ID}}/messages" style="color: white; text-decoration: underline;">View inbox</a>
+            </div>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Analytics Stats -->
+<div style="margin-bottom: 16px;">
+    <h3 style="margin-bottom: 10px; color: #333; font-size: 16px;">Analytics</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+        <div class="stat-card" style="background: linear-gradient(135deg, #48bb78 0%, #38a169 100%); color: white; padding: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px;">
+                <div>
+                    <div style="font-size: 28px; font-weight: 700; line-height: 1; color: white;">{{.Stats.PageviewsToday}}</div>
+                    <div style="font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.9); text-transform: uppercase; letter-spacing: 0.3px; margin-top: 4px;">Pageviews Today</div>
+                </div>
+            </div>
+            <div style="font-size: 10px; color: rgba(255,255,255,0.7); padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);">
+                {{.Stats.UniqueVisitorsToday}} unique today &nbsp;|&nbsp; {{.Stats.PageviewsThisWeek}} (7d) &nbsp;|&nbsp; {{.Stats.PageviewsThisMonth}} (30d) &nbsp;|&nbsp; {{.Stats.TotalPageviews}} total
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- E-commerce Stats -->
+<div style="margin-bottom: 16px;">
+    <h3 style="margin-bottom: 10px; color: #333; font-size: 16px;">E-Commerce Overview</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
+        <div class="stat-card">
+            <div class="stat-value">${{printf "%.0f" .Stats.TotalRevenue}}</div>
+            <div class="stat-label">Total Revenue</div>
+            <div class="stat-detail">All time</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{.Stats.TotalOrders}}</div>
+            <div class="stat-label">Total Orders</div>
+            <div class="stat-detail">All time</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{.Stats.TotalCustomers}}</div>
+            <div class="stat-label">Customers</div>
+            <div class="stat-detail">{{.Stats.TotalProducts}} products ({{.Stats.ActiveProducts}} active)</div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Recent Orders -->
+{{if .RecentOrders}}
+<div class="card" style="margin-bottom: 16px;">
+    <h3>Recent Orders</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Order Number</th>
+                <th>Customer</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th>Date</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .RecentOrders}}
+            <tr>
+                <td><strong>{{.OrderNumber}}</strong></td>
+                <td>
+                    {{.CustomerName}}<br>
+                    <span style="font-size: 12px; color: #718096;">{{.CustomerEmail}}</span>
+                </td>
+                <td>${{printf "%.2f" .Total}}</td>
+                <td>
+                    {{if eq .PaymentStatus "paid"}}
+                    <span style="color: #48bb78; font-weight: 600;">Paid</span>
+                    {{else if eq .PaymentStatus "pending"}}
+                    <span style="color: #ed8936; font-weight: 600;">Pending</span>
+                    {{else}}
+                    <span style="color: #f56565; font-weight: 600;">{{.PaymentStatus}}</span>
+                    {{end}}
+                </td>
+                <td>{{.CreatedAt.Format "Jan 2, 2006 3:04 PM"}}</td>
+                <td>
+                    <a href="/site/{{$.Website.ID}}/orders/{{.ID}}" class="btn btn-sm">View</a>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    <div style="margin-top: 16px;">
+        <a href="/site/{{.Website.ID}}/orders" class="btn">View All Orders</a>
+    </div>
+</div>
+{{else}}
+<div class="card" style="margin-bottom: 16px;">
+    <h3>Recent Orders</h3>
+    <div class="empty-state">
+        <h3>No Orders Yet</h3>
+        <p>Orders will appear here once customers start purchasing.</p>
+    </div>
+</div>
+{{end}}
+
+<!-- Content Stats -->
+<div style="margin-bottom: 16px;">
+    <h3 style="margin-bottom: 10px; color: #333; font-size: 16px;">Content</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+        <div class="stat-card">
+            <div class="stat-value">{{.Stats.TotalArticles}}</div>
+            <div class="stat-label">Total Articles</div>
+            <div class="stat-detail">{{.Stats.PublishedArticles}} published, {{.Stats.DraftArticles}} drafts</div>
+        </div>
+    </div>
+</div>
+
+<!-- Marketing Stats -->
+{{if gt .Stats.TotalSMSSignups 0}}
+<div style="margin-bottom: 16px;">
+    <h3 style="margin-bottom: 10px; color: #333; font-size: 16px;">Marketing</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+        <div class="stat-card">
+            <div class="stat-value">{{.Stats.TotalSMSSignups}}</div>
+            <div class="stat-label">SMS Signups</div>
+            <div class="stat-detail">Total subscribers</div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+<style>
+.stat-card {
+    background: white;
+    border-radius: 6px;
+    padding: 12px 16px;
+    border: 1px solid #e1e8ed;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.stat-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #667eea;
+    margin-bottom: 4px;
+    line-height: 1;
+}
+
+.stat-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #4a5568;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.stat-detail {
+    font-size: 11px;
+    color: #718096;
+}
+</style>
+
+<script>
+// Auto-refresh active users count every 30 seconds
+function updateActiveUsers() {
+    fetch(window.location.pathname)
+        .then(response => response.text())
+        .then(html => {
+            // Parse the HTML to extract just the active users count
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newBadge = doc.getElementById('active-users-badge');
+            if (newBadge) {
+                const currentBadge = document.getElementById('active-users-badge');
+                if (currentBadge) {
+                    // Smoothly update the badge
+                    currentBadge.innerHTML = newBadge.innerHTML;
+
+                    // Add a subtle pulse animation
+                    currentBadge.style.transform = 'scale(1.05)';
+                    setTimeout(() => {
+                        currentBadge.style.transform = 'scale(1)';
+                    }, 200);
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error updating active users:', error);
+        });
+}
+
+// Update every 30 seconds
+setInterval(updateActiveUsers, 30000);
+
+// Add smooth transition for badge updates
+document.getElementById('active-users-badge').style.transition = 'transform 0.2s ease-out';
+</script>
+{{end}}

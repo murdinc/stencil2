@@ -11,6 +11,9 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-chi/chi"
 	"github.com/murdinc/stencil2/configs"
@@ -19,11 +22,52 @@ import (
 	"github.com/murdinc/stencil2/session"
 	"github.com/murdinc/stencil2/shippo"
 	"github.com/murdinc/stencil2/structs"
+	"github.com/murdinc/stencil2/twilio"
+	"github.com/murdinc/stencil2/utils"
 	"github.com/stripe/stripe-go/v78"
 	"github.com/stripe/stripe-go/v78/customer"
 	"github.com/stripe/stripe-go/v78/paymentintent"
 	"github.com/stripe/stripe-go/v78/webhook"
 )
+
+// Simple rate limiter for contact form submissions
+type contactRateLimiter struct {
+	mu          sync.Mutex
+	submissions map[string][]time.Time // IP -> timestamps
+}
+
+var rateLimiter = &contactRateLimiter{
+	submissions: make(map[string][]time.Time),
+}
+
+// checkRateLimit returns true if the IP is allowed to submit
+func (rl *contactRateLimiter) checkRateLimit(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	windowStart := now.Add(-1 * time.Hour) // 1 hour window
+
+	// Clean up old submissions
+	if submissions, exists := rl.submissions[ip]; exists {
+		var recent []time.Time
+		for _, t := range submissions {
+			if t.After(windowStart) {
+				recent = append(recent, t)
+			}
+		}
+		rl.submissions[ip] = recent
+
+		// Check if limit exceeded (max 3 per hour)
+		if len(recent) >= 3 {
+			return false
+		}
+	}
+
+	// Record this submission
+	rl.submissions[ip] = append(rl.submissions[ip], now)
+	return true
+}
 
 // API represents the V1 API instance.
 type APIV1 struct {
@@ -108,9 +152,18 @@ func (api *APIV1) initRoutesV1() {
 	api.addRoute("/api/v1/order/{orderNumber}", "GET", api.getOrder, "order")
 	api.addRoute("/api/v1/tracking/{carrier}/{trackingNumber}", "GET", api.getTracking, "tracking")
 	api.addRoute("/api/v1/webhook/stripe", "POST", api.handleStripeWebhook, "webhook")
+	api.addRoute("/api/v1/webhook/shippo", "POST", api.handleShippoWebhook, "webhook")
 
 	// Marketing
 	api.addRoute("/api/v1/sms-signup", "POST", api.createSMSSignup, "sms")
+	api.addRoute("/api/v1/sms-verify", "POST", api.verifySMSCode, "sms")
+	api.addRoute("/api/v1/sms-webhook", "POST", api.handleSMSWebhook, "sms")
+
+	// Analytics
+	api.addRoute("/api/v1/track", "POST", api.trackAnalytics, "analytics")
+
+	// Contact
+	api.addRoute("/api/v1/contact", "POST", api.submitContactForm, "contact")
 }
 
 func (api *APIV1) APIRouter(siteName string) chi.Router {
@@ -978,7 +1031,132 @@ func (api *APIV1) handlePaymentSuccess(paymentIntentID string) error {
 		// Don't fail the webhook if email fails
 	}
 
+	// Send admin notification email
+	err = emailService.SendAdminOrderNotification(
+		api.websiteConfig,
+		order.OrderNumber,
+		order.CustomerEmail,
+		order.CustomerName,
+		emailItems,
+		order.Subtotal,
+		order.Tax,
+		order.ShippingCost,
+		order.Total,
+	)
+	if err != nil {
+		log.Printf("Failed to send admin notification email: %v", err)
+		// Don't fail the webhook if admin email fails
+	}
+
 	return nil
+}
+
+// handleShippoWebhook handles incoming Shippo tracking webhooks
+func (api *APIV1) handleShippoWebhook(w http.ResponseWriter, r *http.Request) {
+	// Read the request body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Printf("Error reading Shippo webhook body: %v", err)
+		http.Error(w, "Error reading request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	// Parse the webhook payload
+	var webhookData map[string]interface{}
+	if err := json.Unmarshal(body, &webhookData); err != nil {
+		log.Printf("Error parsing Shippo webhook JSON: %v", err)
+		http.Error(w, "Invalid webhook payload", http.StatusBadRequest)
+		return
+	}
+
+	// Log the webhook for debugging
+	log.Printf("Shippo webhook received: %v", webhookData)
+
+	// Extract tracking information
+	trackingNumber, ok := webhookData["tracking_number"].(string)
+	if !ok || trackingNumber == "" {
+		log.Printf("No tracking number in Shippo webhook")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Get tracking status data
+	trackingStatusData, ok := webhookData["tracking_status"].(map[string]interface{})
+	if !ok {
+		log.Printf("No tracking_status in Shippo webhook")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	status, ok := trackingStatusData["status"].(string)
+	if !ok || status == "" {
+		log.Printf("No status in tracking_status")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	log.Printf("Shippo tracking update - Tracking: %s, Status: %s", trackingNumber, status)
+
+	// Map Shippo status to our fulfillment status
+	var fulfillmentStatus string
+	switch strings.ToUpper(status) {
+	case "PRE_TRANSIT":
+		fulfillmentStatus = "processing"
+	case "TRANSIT":
+		fulfillmentStatus = "shipped"
+	case "DELIVERED":
+		fulfillmentStatus = "delivered"
+	case "RETURNED":
+		fulfillmentStatus = "returned"
+	case "FAILURE":
+		fulfillmentStatus = "failed"
+	default:
+		// Unknown status, don't update
+		log.Printf("Unknown Shippo status: %s", status)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Get the order by tracking number
+	order, err := api.dbConn.GetOrderByTrackingNumber(trackingNumber)
+	if err != nil {
+		log.Printf("Order not found for tracking number %s: %v", trackingNumber, err)
+		w.WriteHeader(http.StatusOK) // Still return 200 to acknowledge webhook
+		return
+	}
+
+	// Update the order fulfillment status
+	err = api.dbConn.UpdateOrderTrackingStatus(trackingNumber, fulfillmentStatus)
+	if err != nil {
+		log.Printf("Failed to update tracking status: %v", err)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	log.Printf("Updated order %s to status: %s", order.OrderNumber, fulfillmentStatus)
+
+	// Send delivery confirmation email if delivered
+	if fulfillmentStatus == "delivered" {
+		emailService, err := email.NewEmailService(api.envConfig)
+		if err == nil {
+			err = emailService.SendDeliveryConfirmation(
+				api.websiteConfig,
+				order.OrderNumber,
+				order.CustomerEmail,
+				order.CustomerName,
+			)
+			if err != nil {
+				log.Printf("Failed to send delivery confirmation email: %v", err)
+			} else {
+				log.Printf("Sent delivery confirmation email for order %s", order.OrderNumber)
+			}
+		} else {
+			log.Printf("Failed to create email service: %v", err)
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 // validateAddress validates a shipping address using Shippo
@@ -1068,20 +1246,325 @@ func (api *APIV1) createSMSSignup(w http.ResponseWriter, r *http.Request) {
 		reqBody.CountryCode = "+1"
 	}
 
-	// Create signup
-	signupID, err := api.dbConn.CreateSMSSignup(reqBody.CountryCode, reqBody.Phone, reqBody.Email, reqBody.Source)
+	// Generate 6-digit verification code
+	code := utils.GenerateVerificationCode()
+
+	// Set expiration to 10 minutes from now
+	expiresAt := time.Now().Add(10 * time.Minute)
+
+	// Store verification code in database
+	err = api.dbConn.SetSMSVerificationCode(reqBody.CountryCode, reqBody.Phone, code, expiresAt)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create signup: %v", err), http.StatusInternalServerError)
+		log.Printf("Failed to store verification code: %v", err)
+		http.Error(w, "Failed to initiate verification", http.StatusInternalServerError)
+		return
+	}
+
+	// Send verification code via Twilio
+	twilioClient := twilio.NewClient(
+		api.websiteConfig.Twilio.AccountSID,
+		api.websiteConfig.Twilio.AuthToken,
+		api.websiteConfig.Twilio.FromPhone,
+	)
+
+	// Format phone number for Twilio (E.164 format)
+	toPhone := twilio.FormatPhoneNumber(reqBody.CountryCode, reqBody.Phone)
+
+	err = twilioClient.SendVerificationCode(toPhone, code)
+	if err != nil {
+		log.Printf("Failed to send verification code via Twilio: %v", err)
+		http.Error(w, "Failed to send verification code", http.StatusInternalServerError)
 		return
 	}
 
 	// Return success response
 	response := map[string]interface{}{
 		"success": true,
-		"id":      signupID,
-		"message": "Successfully signed up for SMS notifications",
+		"message": "Verification code sent to your phone",
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func (api *APIV1) verifySMSCode(w http.ResponseWriter, r *http.Request) {
+	var reqBody struct {
+		CountryCode string `json:"countryCode"`
+		Phone       string `json:"phone"`
+		Code        string `json:"code"`
+		Email       string `json:"email"`
+		Source      string `json:"source"`
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&reqBody)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if reqBody.Phone == "" || reqBody.Code == "" {
+		http.Error(w, "Phone number and verification code are required", http.StatusBadRequest)
+		return
+	}
+
+	// Default to +1 if not provided
+	if reqBody.CountryCode == "" {
+		reqBody.CountryCode = "+1"
+	}
+
+	// Verify the code
+	verified, err := api.dbConn.VerifySMSCode(reqBody.CountryCode, reqBody.Phone, reqBody.Code)
+	if err != nil {
+		log.Printf("Failed to verify code: %v", err)
+		http.Error(w, "Verification failed", http.StatusInternalServerError)
+		return
+	}
+
+	if !verified {
+		response := map[string]interface{}{
+			"success": false,
+			"message": "Invalid or expired verification code",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Update email and source if provided
+	if reqBody.Email != "" || reqBody.Source != "" {
+		_, err = api.dbConn.CreateSMSSignup(reqBody.CountryCode, reqBody.Phone, reqBody.Email, reqBody.Source)
+		if err != nil {
+			log.Printf("Failed to update signup details: %v", err)
+			// Continue anyway since verification succeeded
+		}
+	}
+
+	// Return success response
+	response := map[string]interface{}{
+		"success": true,
+		"message": "Phone number verified successfully",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleSMSWebhook handles incoming SMS from Twilio (for unsubscribe)
+func (api *APIV1) handleSMSWebhook(w http.ResponseWriter, r *http.Request) {
+	// Parse Twilio webhook form data
+	if err := r.ParseForm(); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	// Get incoming message details from Twilio
+	from := r.FormValue("From")        // Phone number (E.164 format: +14155551234)
+	body := r.FormValue("Body")        // Message text
+
+	if from == "" || body == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	// Normalize message body for comparison
+	bodyLower := strings.ToLower(strings.TrimSpace(body))
+
+	// Check if this is an unsubscribe request
+	// Common opt-out keywords per CTIA guidelines
+	unsubscribeKeywords := []string{
+		"stop", "stopall", "unsubscribe", "cancel", "end", "quit",
+	}
+
+	isUnsubscribe := false
+	for _, keyword := range unsubscribeKeywords {
+		if bodyLower == keyword {
+			isUnsubscribe = true
+			break
+		}
+	}
+
+	if isUnsubscribe {
+		// Parse phone number to extract country code and phone
+		// E.164 format: +14155551234
+		countryCode := ""
+		phone := ""
+
+		if len(from) > 2 && from[0] == '+' {
+			// Extract country code (1-3 digits after +)
+			if len(from) >= 12 { // +1 country code (11 digits total)
+				countryCode = from[:2]  // +1
+				phone = from[2:]        // 4155551234
+			} else if len(from) >= 11 { // Other country codes
+				countryCode = from[:3]  // +44, etc
+				phone = from[3:]
+			}
+		}
+
+		// Remove any non-digit characters from phone
+		cleanPhone := ""
+		for _, c := range phone {
+			if c >= '0' && c <= '9' {
+				cleanPhone += string(c)
+			}
+		}
+
+		if countryCode != "" && cleanPhone != "" {
+			// Mark as unsubscribed in database
+			err := api.dbConn.UnsubscribeSMS(countryCode, cleanPhone)
+			if err != nil {
+				log.Printf("Error unsubscribing %s: %v", from, err)
+			}
+		}
+
+		// Send TwiML response confirming unsubscribe
+		w.Header().Set("Content-Type", "text/xml")
+		fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Message>You have been unsubscribed from SMS notifications. You will not receive further messages.</Message>
+</Response>`)
+		return
+	}
+
+	// For other messages, just send empty response (no action)
+	w.Header().Set("Content-Type", "text/xml")
+	fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?>
+<Response></Response>`)
+}
+
+// ===============================
+// Analytics Handler
+// ===============================
+
+func (api *APIV1) trackAnalytics(w http.ResponseWriter, r *http.Request) {
+	var reqBody struct {
+		SessionID    string                 `json:"s"`
+		EventType    string                 `json:"t"`
+		Path         string                 `json:"p"`
+		Referrer     string                 `json:"r"`
+		EventName    string                 `json:"e"`
+		EventData    map[string]interface{} `json:"d"`
+		ScreenWidth  int                    `json:"sw"`
+		ScreenHeight int                    `json:"sh"`
+		DeviceType   string                 `json:"dt"`
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&reqBody)
+	if err != nil {
+		w.WriteHeader(http.StatusNoContent) // Return 204 even on error to keep beacon fast
+		return
+	}
+
+	// Extract client info from request
+	userAgent := r.UserAgent()
+	ipAddress := r.Header.Get("X-Forwarded-For")
+	if ipAddress == "" {
+		ipAddress = r.Header.Get("X-Real-IP")
+	}
+	if ipAddress == "" {
+		ipAddress = r.RemoteAddr
+	}
+
+	// Track based on type
+	if reqBody.EventType == "e" && reqBody.EventName != "" {
+		// Custom event
+		err = api.dbConn.TrackEvent(reqBody.SessionID, reqBody.EventName, reqBody.Path, reqBody.EventData)
+	} else if reqBody.EventType == "h" {
+		// Heartbeat - track as event to update session activity
+		err = api.dbConn.TrackEvent(reqBody.SessionID, "heartbeat", reqBody.Path, nil)
+	} else {
+		// Pageview (default)
+		err = api.dbConn.TrackPageView(
+			reqBody.SessionID,
+			reqBody.Path,
+			reqBody.Referrer,
+			userAgent,
+			ipAddress,
+			reqBody.ScreenWidth,
+			reqBody.ScreenHeight,
+		)
+	}
+
+	if err != nil {
+		log.Printf("Failed to track analytics: %v", err)
+	}
+
+	// Always return 204 No Content for beacons (fast, no response body)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// submitContactForm handles contact form submissions
+func (api *APIV1) submitContactForm(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name         string `json:"name"`
+		Email        string `json:"email"`
+		Message      string `json:"message"`
+		Website      string `json:"website"`        // Honeypot field
+		FormLoadedAt string `json:"form_loaded_at"` // Timestamp
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// SPAM PREVENTION 1: Honeypot - if filled, it's a bot
+	if req.Website != "" {
+		log.Printf("Spam detected: honeypot filled by %s", r.RemoteAddr)
+		http.Error(w, "Invalid submission", http.StatusBadRequest)
+		return
+	}
+
+	// SPAM PREVENTION 2: Time-based validation - form must be open for at least 3 seconds
+	if req.FormLoadedAt != "" {
+		loadedAt, err := strconv.ParseInt(req.FormLoadedAt, 10, 64)
+		if err == nil {
+			loadedTime := time.UnixMilli(loadedAt)
+			timeTaken := time.Since(loadedTime)
+			if timeTaken < 3*time.Second {
+				log.Printf("Spam detected: form submitted too quickly (%v) from %s", timeTaken, r.RemoteAddr)
+				http.Error(w, "Please wait a moment before submitting", http.StatusTooManyRequests)
+				return
+			}
+		}
+	}
+
+	// SPAM PREVENTION 3: Rate limiting - max 3 submissions per hour per IP
+	clientIP := r.RemoteAddr
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		clientIP = strings.Split(forwarded, ",")[0]
+	}
+	if !rateLimiter.checkRateLimit(clientIP) {
+		log.Printf("Rate limit exceeded for IP: %s", clientIP)
+		http.Error(w, "Too many submissions. Please try again later.", http.StatusTooManyRequests)
+		return
+	}
+
+	// Validate required fields
+	if req.Name == "" || req.Email == "" || req.Message == "" {
+		http.Error(w, "Name, email, and message are required", http.StatusBadRequest)
+		return
+	}
+
+	// Basic email validation
+	if !strings.Contains(req.Email, "@") {
+		http.Error(w, "Invalid email address", http.StatusBadRequest)
+		return
+	}
+
+	// Save message to database (api.dbConn is already connected to website-specific database)
+	err = api.dbConn.CreateMessage(req.Name, req.Email, req.Message)
+	if err != nil {
+		log.Printf("Error saving contact message: %v", err)
+		http.Error(w, "Failed to submit message", http.StatusInternalServerError)
+		return
+	}
+
+	// Return success
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Thank you for your message! We'll get back to you soon.",
+	})
 }

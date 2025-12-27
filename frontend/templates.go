@@ -15,6 +15,16 @@ import (
 	"github.com/murdinc/stencil2/structs"
 )
 
+type SEOData struct {
+	Title          string // Page title for <title> and og:title
+	Description    string // Meta description and og:description
+	Keywords       string // Meta keywords (optional, for legacy)
+	Canonical      string // Canonical URL (full absolute URL)
+	Image          string // og:image and twitter:image URL
+	Type           string // og:type: "website", "article", "product"
+	StructuredData string // JSON-LD structured data for rich snippets
+}
+
 type PageData struct {
 	ProdMode         bool
 	HideErrors       bool
@@ -35,6 +45,7 @@ type PageData struct {
 	ErrorDescription string
 	CartItemCount    int
 	Error            string
+	SEO              SEOData // SEO metadata for meta tags and Open Graph
 }
 
 func (website *Website) ExecuteTemplate(w http.ResponseWriter, tpl configs.TemplateConfig, pageData PageData) {

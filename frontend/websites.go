@@ -67,6 +67,24 @@ func NewWebsite(envConfig configs.EnvironmentConfig, websiteConfig configs.Websi
 		if err != nil {
 			log.Printf("Warning: Failed to initialize e-commerce tables: %v", err)
 		}
+
+		// Initialize analytics tables if they don't exist
+		err = dbConn.InitAnalyticsTables()
+		if err != nil {
+			log.Printf("Warning: Failed to initialize analytics tables: %v", err)
+		}
+
+	// Initialize messages tables if they don't exist
+	err = dbConn.InitMessagesTables()
+	if err != nil {
+		log.Printf("Warning: Failed to initialize messages tables: %v", err)
+	}
+
+		// Copy analytics.js to website public directory
+		err = copyAnalyticsJS(websiteConfig.Directory)
+		if err != nil {
+			log.Printf("Warning: Failed to copy analytics.js: %v", err)
+		}
 	}
 
 	// Read in the template configs
@@ -183,4 +201,30 @@ func MD5All(root string) (string, error) {
 	hashString := hex.EncodeToString(combinedHash[:])
 
 	return hashString, nil
+}
+
+// copyAnalyticsJS copies the analytics.js file from frontend/static to the website's public directory
+func copyAnalyticsJS(websiteDir string) error {
+	workDir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	sourcePath := filepath.Join(workDir, "frontend", "static", "analytics.js")
+	destPath := filepath.Join(workDir, websiteDir, "public", "analytics.js")
+
+	// Read source file
+	data, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return fmt.Errorf("failed to read source analytics.js: %w", err)
+	}
+
+	// Write to destination
+	err = os.WriteFile(destPath, data, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write analytics.js to %s: %w", destPath, err)
+	}
+
+	log.Printf("Copied analytics.js to %s", destPath)
+	return nil
 }

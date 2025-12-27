@@ -476,6 +476,74 @@ func (db *DBConnection) GetPublishedPostsByMonth(month time.Time) ([]structs.Pos
 	return posts, nil
 }
 
+func (db *DBConnection) GetAllPublishedProducts() ([]structs.Product, error) {
+	sqlQuery := `
+		SELECT
+			slug,
+			updated_at
+		FROM
+			products_unified
+		WHERE
+			status = 'published'
+		ORDER BY
+			updated_at DESC;
+	`
+
+	rows, err := db.QueryRows(sqlQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var products []structs.Product
+	for rows.Next() {
+		var product structs.Product
+		if err := rows.Scan(
+			&product.Slug,
+			&product.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		products = append(products, product)
+	}
+
+	return products, nil
+}
+
+func (db *DBConnection) GetAllPublishedCollections() ([]structs.Collection, error) {
+	sqlQuery := `
+		SELECT
+			slug,
+			updated_at
+		FROM
+			collections_unified
+		WHERE
+			status = 'published'
+		ORDER BY
+			updated_at DESC;
+	`
+
+	rows, err := db.QueryRows(sqlQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var collections []structs.Collection
+	for rows.Next() {
+		var collection structs.Collection
+		if err := rows.Scan(
+			&collection.Slug,
+			&collection.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		collections = append(collections, collection)
+	}
+
+	return collections, nil
+}
+
 func defaultOffsetCount(vars map[string]string) (int, int) {
 
 	// Convert offset to an integer, default to 0 if not a number

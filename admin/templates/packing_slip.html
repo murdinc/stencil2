@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Packing Slip - Order {{.Order.OrderNumber}}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            padding: 40px;
+            max-width: 800px;
+            margin: 0 auto;
+            color: #333;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #000;
+        }
+
+        .logo-section {
+            flex: 1;
+        }
+
+        .logo {
+            max-width: 200px;
+            max-height: 80px;
+            height: auto;
+        }
+
+        .site-name {
+            font-size: 28px;
+            font-weight: bold;
+            color: #000;
+        }
+
+        .packing-slip-title {
+            font-size: 24px;
+            font-weight: bold;
+            text-align: right;
+            color: #666;
+        }
+
+        .order-info {
+            margin-bottom: 30px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+
+        .order-info h2 {
+            font-size: 18px;
+            margin-bottom: 10px;
+            color: #000;
+        }
+
+        .order-info p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+
+        .shipping-address {
+            margin-bottom: 30px;
+        }
+
+        .shipping-address h3 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            color: #000;
+        }
+
+        .address-box {
+            border: 2px solid #000;
+            padding: 15px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+
+        .items-table thead {
+            background: #000;
+            color: #fff;
+        }
+
+        .items-table th,
+        .items-table td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #ddd;
+        }
+
+        .items-table th {
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .items-table td {
+            font-size: 13px;
+        }
+
+        .items-table tbody tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+
+        .items-table .qty-col {
+            text-align: center;
+            width: 80px;
+        }
+
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+
+        .no-print {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .no-print:hover {
+            background: #5568d3;
+        }
+
+        @media print {
+            body {
+                padding: 20px;
+            }
+
+            .no-print {
+                display: none;
+            }
+
+            .header {
+                margin-bottom: 30px;
+            }
+
+            @page {
+                margin: 0.5in;
+            }
+        }
+    </style>
+</head>
+<body>
+    <button class="no-print" onclick="window.print()">Print Packing Slip</button>
+
+    <div class="header">
+        <div class="logo-section">
+            {{if .Website.Logo}}
+                <img src="{{.Website.Logo}}" alt="{{.Website.SiteName}}" class="logo">
+            {{else}}
+                <div class="site-name">{{.Website.SiteName}}</div>
+            {{end}}
+        </div>
+        <div class="packing-slip-title">PACKING SLIP</div>
+    </div>
+
+    <div class="order-info">
+        <h2>Order Information</h2>
+        <p><strong>Order Number:</strong> {{.Order.OrderNumber}}</p>
+        <p><strong>Order Date:</strong> {{.Order.CreatedAt.Format "January 2, 2006"}}</p>
+        <p><strong>Payment Status:</strong> {{.Order.PaymentStatus}}</p>
+    </div>
+
+    <div class="shipping-address">
+        <h3>Ship To:</h3>
+        <div class="address-box">
+            <strong>{{.Order.CustomerName}}</strong><br>
+            {{.Order.ShippingAddressLine1}}<br>
+            {{if .Order.ShippingAddressLine2}}
+                {{.Order.ShippingAddressLine2}}<br>
+            {{end}}
+            {{.Order.ShippingCity}}, {{.Order.ShippingState}} {{.Order.ShippingZip}}<br>
+            {{.Order.ShippingCountry}}
+        </div>
+    </div>
+
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th>Product</th>
+                <th class="qty-col">Quantity</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Order.Items}}
+            <tr>
+                <td>
+                    <strong>{{.ProductName}}</strong>
+                    {{if .VariantTitle}}
+                        <br><small style="color: #666;">{{.VariantTitle}}</small>
+                    {{end}}
+                </td>
+                <td class="qty-col">{{.Quantity}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+
+    <div class="footer">
+        <p>Thank you for your order!</p>
+        <p>If you have any questions, please contact {{.Website.EmailFromAddress}}</p>
+    </div>
+
+    <script>
+        // Auto-open print dialog when page loads
+        window.addEventListener('load', function() {
+            window.print();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>Webhook Configuration</h2>
+    <p>Configure webhooks for Stripe and Shippo integrations</p>
+</div>
+
+<div style="display: grid; gap: 24px; max-width: 900px;">
+    <!-- Stripe Webhook -->
+    <div class="card">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+            <div style="width: 48px; height: 48px; background: #635bff; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 24px; font-weight: 700;">S</div>
+            <div>
+                <h3 style="margin: 0;">Stripe Webhook</h3>
+                <p style="margin: 4px 0 0 0; color: #666; font-size: 14px;">Payment events and order confirmations</p>
+            </div>
+        </div>
+
+        <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+            <label style="display: block; font-weight: 600; margin-bottom: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #555;">Webhook URL</label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="text" id="stripeWebhookUrl" readonly value="{{.BaseURL}}/api/v1/webhook/stripe" style="flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-family: monospace; font-size: 13px; background: white;">
+                <button onclick="copyToClipboard('stripeWebhookUrl')" class="btn btn-sm" style="white-space: nowrap;">Copy URL</button>
+            </div>
+        </div>
+
+        <div style="background: #fff4e6; border-left: 4px solid #f59e0b; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
+            <h4 style="margin: 0 0 8px 0; color: #f59e0b; font-size: 14px;">⚙️ Setup Instructions</h4>
+            <ol style="margin: 8px 0 0 0; padding-left: 20px; font-size: 14px; line-height: 1.6;">
+                <li>Log in to your <a href="https://dashboard.stripe.com/webhooks" target="_blank" style="color: #635bff; text-decoration: underline;">Stripe Dashboard</a></li>
+                <li>Navigate to Developers → Webhooks</li>
+                <li>Click "Add endpoint"</li>
+                <li>Paste the webhook URL above</li>
+                <li>Select these events to listen to:
+                    <ul style="margin-top: 8px;">
+                        <li><code style="background: #e1e8ed; padding: 2px 6px; border-radius: 3px;">payment_intent.succeeded</code></li>
+                        <li><code style="background: #e1e8ed; padding: 2px 6px; border-radius: 3px;">payment_intent.payment_failed</code></li>
+                        <li><code style="background: #e1e8ed; padding: 2px 6px; border-radius: 3px;">charge.refunded</code></li>
+                    </ul>
+                </li>
+                <li>Click "Add endpoint" to save</li>
+            </ol>
+        </div>
+
+        <div style="padding: 12px; background: #e6ffed; border: 1px solid #48bb78; border-radius: 6px;">
+            <p style="margin: 0; font-size: 14px;"><strong style="color: #48bb78;">✓ What this webhook does:</strong></p>
+            <ul style="margin: 8px 0 0 0; padding-left: 20px; font-size: 14px; line-height: 1.6;">
+                <li>Updates order payment status when payment succeeds or fails</li>
+                <li>Sends order confirmation email to customer</li>
+                <li>Sends new order notification email to admin</li>
+                <li>Processes refunds automatically</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Shippo Webhook -->
+    <div class="card">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+            <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px;">📦</div>
+            <div>
+                <h3 style="margin: 0;">Shippo Webhook</h3>
+                <p style="margin: 4px 0 0 0; color: #666; font-size: 14px;">Shipping tracking updates</p>
+            </div>
+        </div>
+
+        <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+            <label style="display: block; font-weight: 600; margin-bottom: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #555;">Webhook URL</label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="text" id="shippoWebhookUrl" readonly value="{{.BaseURL}}/api/v1/webhook/shippo" style="flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-family: monospace; font-size: 13px; background: white;">
+                <button onclick="copyToClipboard('shippoWebhookUrl')" class="btn btn-sm" style="white-space: nowrap;">Copy URL</button>
+            </div>
+        </div>
+
+        <div style="background: #fff4e6; border-left: 4px solid #f59e0b; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
+            <h4 style="margin: 0 0 8px 0; color: #f59e0b; font-size: 14px;">⚙️ Setup Instructions</h4>
+            <ol style="margin: 8px 0 0 0; padding-left: 20px; font-size: 14px; line-height: 1.6;">
+                <li>Log in to your <a href="https://apps.goshippo.com/settings/api" target="_blank" style="color: #4a90e2; text-decoration: underline;">Shippo Dashboard</a></li>
+                <li>Navigate to Settings → API</li>
+                <li>Scroll to "Webhooks" section</li>
+                <li>Click "Add Webhook"</li>
+                <li>Paste the webhook URL above</li>
+                <li>Select event type: <code style="background: #e1e8ed; padding: 2px 6px; border-radius: 3px;">track_updated</code></li>
+                <li>Click "Save" to activate</li>
+            </ol>
+        </div>
+
+        <div style="padding: 12px; background: #e6ffed; border: 1px solid #48bb78; border-radius: 6px;">
+            <p style="margin: 0; font-size: 14px;"><strong style="color: #48bb78;">✓ What this webhook does:</strong></p>
+            <ul style="margin: 8px 0 0 0; padding-left: 20px; font-size: 14px; line-height: 1.6;">
+                <li>Automatically updates order status when tracking status changes</li>
+                <li>Sends delivery confirmation email when package is delivered</li>
+                <li>Tracks packages in real-time (in transit, delivered, etc.)</li>
+                <li>No manual status updates needed!</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Testing Section -->
+    <div class="card" style="background: #f8f9fa; border: 2px solid #e1e8ed;">
+        <h3 style="margin: 0 0 12px 0;">🧪 Testing Webhooks</h3>
+        <p style="font-size: 14px; margin-bottom: 16px; color: #555;">After setting up your webhooks, you can test them:</p>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div>
+                <h4 style="margin: 0 0 8px 0; font-size: 14px; color: #635bff;">Stripe Testing</h4>
+                <ul style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6; color: #666;">
+                    <li>Use Stripe's webhook testing tool in the dashboard</li>
+                    <li>Or make a test payment with card <code style="background: white; padding: 2px 6px; border-radius: 3px;">4242 4242 4242 4242</code></li>
+                    <li>Check your email for order confirmation</li>
+                </ul>
+            </div>
+            <div>
+                <h4 style="margin: 0 0 8px 0; font-size: 14px; color: #4a90e2;">Shippo Testing</h4>
+                <ul style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6; color: #666;">
+                    <li>Purchase a test label in the admin</li>
+                    <li>Shippo will send webhook events as the package moves</li>
+                    <li>Watch order status update automatically</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyToClipboard(elementId) {
+    const input = document.getElementById(elementId);
+    input.select();
+    input.setSelectionRange(0, 99999); // For mobile devices
+
+    navigator.clipboard.writeText(input.value).then(function() {
+        // Show success feedback
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        btn.style.background = '#48bb78';
+        btn.style.color = 'white';
+
+        setTimeout(function() {
+            btn.textContent = originalText;
+            btn.style.background = '';
+            btn.style.color = '';
+        }, 2000);
+    }, function(err) {
+        alert('Failed to copy: ' + err);
+    });
+}
+</script>
+{{end}}

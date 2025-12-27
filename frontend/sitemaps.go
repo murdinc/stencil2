@@ -235,3 +235,223 @@ func BuildSitemaps(envConfig configs.EnvironmentConfig, websiteConfig configs.We
 	log.Printf("No Database connection, skipping [%s]...", websiteConfig.SiteName)
 
 }
+
+func BuildProductSitemap(envConfig configs.EnvironmentConfig, websiteConfig configs.WebsiteConfig) {
+	dbConn := &database.DBConnection{}
+
+	// Open a connection to the MySQL database
+	err := dbConn.Connect(envConfig.Database.User, envConfig.Database.Password, envConfig.Database.Host, envConfig.Database.Port, websiteConfig.Database.Name, 1000)
+	if err != nil {
+		log.Fatalf("Failed to connect to the database: %v", err)
+	}
+
+	if dbConn.Connected {
+		defer dbConn.Database.Close()
+
+		// Get all published products
+		products, err := dbConn.GetAllPublishedProducts()
+		if err != nil {
+			log.Fatalf("Failed to get published products: %v", err)
+		}
+
+		if len(products) < 1 {
+			log.Printf("No published products found for site: [%s]", websiteConfig.SiteName)
+			return
+		}
+
+		// Create the 'sitemaps' directory if it doesn't exist
+		sitemapsDir := filepath.Join(websiteConfig.Directory, "sitemaps")
+		if err := os.MkdirAll(sitemapsDir, os.ModePerm); err != nil {
+			log.Fatalf("Error creating 'sitemaps' directory: %v", err)
+			return
+		}
+
+		urlSet := URLSet{
+			Xmlns: "http://www.sitemaps.org/schemas/sitemap/0.9",
+		}
+
+		var urls []URL
+
+		// Build URLs for each product
+		for _, product := range products {
+			url := URL{
+				Loc:        "https://" + websiteConfig.SiteName + "/products/" + product.Slug,
+				LastMod:    product.UpdatedAt.Format("2006-01-02T15:04:05-07:00"),
+				ChangeFreq: "weekly",
+				Priority:   "0.8",
+			}
+			urls = append(urls, url)
+		}
+
+		urlSet.URLs = urls
+
+		output, err := xml.MarshalIndent(urlSet, "", "    ")
+		if err != nil {
+			log.Fatalf("Failed to marshal XML sitemap file: %v", err)
+			return
+		}
+
+		output = []byte(xml.Header + string(output))
+
+		filename := filepath.Join(sitemapsDir, "products.xml")
+
+		file, err := os.Create(filename)
+		if err != nil {
+			log.Fatalf("Failed to create sitemap file: %v", err)
+			return
+		}
+		defer file.Close()
+
+		_, err = file.Write(output)
+		if err != nil {
+			log.Fatalf("Failed to write sitemap file: %v", err)
+		}
+
+		log.Printf("Product sitemap [%s] generated successfully with %d products.", filename, len(products))
+		return
+	}
+
+	log.Printf("No Database connection, skipping [%s]...", websiteConfig.SiteName)
+}
+
+func BuildCollectionSitemap(envConfig configs.EnvironmentConfig, websiteConfig configs.WebsiteConfig) {
+	dbConn := &database.DBConnection{}
+
+	// Open a connection to the MySQL database
+	err := dbConn.Connect(envConfig.Database.User, envConfig.Database.Password, envConfig.Database.Host, envConfig.Database.Port, websiteConfig.Database.Name, 1000)
+	if err != nil {
+		log.Fatalf("Failed to connect to the database: %v", err)
+	}
+
+	if dbConn.Connected {
+		defer dbConn.Database.Close()
+
+		// Get all published collections
+		collections, err := dbConn.GetAllPublishedCollections()
+		if err != nil {
+			log.Fatalf("Failed to get published collections: %v", err)
+		}
+
+		if len(collections) < 1 {
+			log.Printf("No published collections found for site: [%s]", websiteConfig.SiteName)
+			return
+		}
+
+		// Create the 'sitemaps' directory if it doesn't exist
+		sitemapsDir := filepath.Join(websiteConfig.Directory, "sitemaps")
+		if err := os.MkdirAll(sitemapsDir, os.ModePerm); err != nil {
+			log.Fatalf("Error creating 'sitemaps' directory: %v", err)
+			return
+		}
+
+		urlSet := URLSet{
+			Xmlns: "http://www.sitemaps.org/schemas/sitemap/0.9",
+		}
+
+		var urls []URL
+
+		// Build URLs for each collection
+		for _, collection := range collections {
+			url := URL{
+				Loc:        "https://" + websiteConfig.SiteName + "/collections/" + collection.Slug,
+				LastMod:    collection.UpdatedAt.Format("2006-01-02T15:04:05-07:00"),
+				ChangeFreq: "weekly",
+				Priority:   "0.7",
+			}
+			urls = append(urls, url)
+		}
+
+		urlSet.URLs = urls
+
+		output, err := xml.MarshalIndent(urlSet, "", "    ")
+		if err != nil {
+			log.Fatalf("Failed to marshal XML sitemap file: %v", err)
+			return
+		}
+
+		output = []byte(xml.Header + string(output))
+
+		filename := filepath.Join(sitemapsDir, "collections.xml")
+
+		file, err := os.Create(filename)
+		if err != nil {
+			log.Fatalf("Failed to create sitemap file: %v", err)
+			return
+		}
+		defer file.Close()
+
+		_, err = file.Write(output)
+		if err != nil {
+			log.Fatalf("Failed to write sitemap file: %v", err)
+		}
+
+		log.Printf("Collection sitemap [%s] generated successfully with %d collections.", filename, len(collections))
+		return
+	}
+
+	log.Printf("No Database connection, skipping [%s]...", websiteConfig.SiteName)
+}
+
+func BuildStaticPagesSitemap(websiteConfig configs.WebsiteConfig) {
+	// Create the 'sitemaps' directory if it doesn't exist
+	sitemapsDir := filepath.Join(websiteConfig.Directory, "sitemaps")
+	if err := os.MkdirAll(sitemapsDir, os.ModePerm); err != nil {
+		log.Fatalf("Error creating 'sitemaps' directory: %v", err)
+		return
+	}
+
+	urlSet := URLSet{
+		Xmlns: "http://www.sitemaps.org/schemas/sitemap/0.9",
+	}
+
+	// Define static pages that should be included in sitemap
+	staticPages := []struct {
+		path     string
+		priority string
+		freq     string
+	}{
+		{"/", "1.0", "daily"},           // Homepage
+		{"/collections", "0.9", "daily"}, // Collections listing
+		{"/contact", "0.6", "monthly"},
+		{"/privacy-policy", "0.3", "yearly"},
+		{"/sms-signup", "0.5", "monthly"},
+	}
+
+	var urls []URL
+
+	// Build URLs for each static page
+	for _, page := range staticPages {
+		url := URL{
+			Loc:        "https://" + websiteConfig.SiteName + page.path,
+			ChangeFreq: page.freq,
+			Priority:   page.priority,
+		}
+		urls = append(urls, url)
+	}
+
+	urlSet.URLs = urls
+
+	output, err := xml.MarshalIndent(urlSet, "", "    ")
+	if err != nil {
+		log.Fatalf("Failed to marshal XML sitemap file: %v", err)
+		return
+	}
+
+	output = []byte(xml.Header + string(output))
+
+	filename := filepath.Join(sitemapsDir, "pages.xml")
+
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatalf("Failed to create sitemap file: %v", err)
+		return
+	}
+	defer file.Close()
+
+	_, err = file.Write(output)
+	if err != nil {
+		log.Fatalf("Failed to write sitemap file: %v", err)
+	}
+
+	log.Printf("Static pages sitemap [%s] generated successfully with %d pages.", filename, len(staticPages))
+}

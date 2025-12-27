@@ -4,17 +4,54 @@ A high-performance, multi-site template engine and content management platform w
 
 ## Features
 
+### Core Platform
 - **Multi-Site Hosting**: Host multiple independent websites with separate configurations, templates, and databases
-- **Built-in Admin CMS**: Web-based admin interface for managing websites, articles, and products
-- **E-commerce Ready**: Built-in e-commerce tables and REST APIs for products, collections, cart, and checkout
+- **Built-in Admin CMS**: Web-based admin interface for managing websites, articles, products, orders, and customers
 - **Powerful Template Engine**: Go templates with custom functions and Sprig library integration
 - **Asset Pipeline**: Automatic CSS/JS minification and combination with cache busting
-- **REST API**: JSON API (v1) for programmatic content access
+- **REST API**: Comprehensive JSON API (v1) for programmatic content access
 - **Dynamic Routing**: Template-based route generation with pagination support
-- **Media Proxy**: On-the-fly image resizing with WebP support
+- **Media Proxy**: On-the-fly image resizing with width parameter
 - **Sitemap Generation**: Automatic XML sitemap generation from database content
 - **Development Tools**: File watcher for hot-reload and error debugging
 - **Production Ready**: Includes systemd service and Nginx configuration examples
+
+### E-commerce Features
+- **Product Management**: Products with variants, SKUs, inventory tracking, and pricing
+- **Collections**: Organize products into collections with sort ordering
+- **Shopping Cart**: Session-based cart with 7-day expiry
+- **Customer Tracking**: Automatic customer creation with order history and spending analytics
+- **Stripe Integration**: Payment processing with Stripe payment intents and customer objects
+- **Shippo Shipping**: Real-time shipping rate calculation, label generation, and tracking
+- **Order Management**: Complete order workflow with fulfillment status and tracking
+- **Email Notifications**: AWS SES integration for order confirmation emails
+- **Tax Calculation**: Configurable tax rates per website
+- **Address Validation**: Shippo-powered address validation during checkout
+
+### Content Features
+- **Articles & Posts**: Full-featured content management with multiple article types
+- **Categories & Tags**: Organize content with categories, tags, and authors
+- **Gallery Support**: Multi-slide galleries with images and captions
+- **Featured Content**: Flag articles and products as featured
+- **Preview Mode**: Preview draft content before publishing
+- **SEO Support**: Canonical URLs, keywords, and meta descriptions
+
+### Marketing Features
+- **SMS Signups**: Collect phone numbers for marketing with country code support
+- **Early Access Control**: Password-protect sites during development with public page exceptions
+- **Email Marketing**: Customer and SMS signup lists for marketing campaigns
+
+### Analytics & Insights
+- **Custom Analytics System**: Privacy-focused, lightweight analytics built into the platform (no external dependencies)
+- **Real-Time Monitoring**: Live active user count and current page views (last 5 minutes)
+- **Traffic Analytics**: Pageviews, unique visitors, sessions, bounce rate, and session duration
+- **E-Commerce Analytics**: Conversion rate, cart abandonment rate, revenue metrics, and average order value
+- **User Behavior**: Entry pages, exit pages, top pages, and visitor referral sources
+- **Device Analytics**: Mobile, tablet, and desktop traffic breakdown
+- **Custom Event Tracking**: JavaScript API for tracking custom events (add to cart, checkout, purchases, etc.)
+- **Heartbeat Tracking**: 30-second heartbeat signals for accurate session duration and active user detection
+- **Session Management**: Automatic session detection with 30-minute timeout and localStorage persistence
+- **Admin Dashboard**: Beautiful analytics dashboard with time period selectors (7/30/90/365 days)
 
 ## Table of Contents
 
@@ -27,6 +64,11 @@ A high-performance, multi-site template engine and content management platform w
 - [CLI Commands](#cli-commands)
 - [Directory Structure](#directory-structure)
 - [Template System](#template-system)
+- [Analytics System](#analytics-system)
+  - [How It Works](#how-it-works)
+  - [JavaScript API](#javascript-api)
+  - [Admin Dashboard](#admin-dashboard)
+  - [Privacy & Performance](#privacy--performance)
 - [API Endpoints](#api-endpoints)
 - [Database Schema](#database-schema)
 - [Deployment](#deployment)
@@ -198,15 +240,19 @@ The admin backend is configured in `websites/env-dev.json`:
 
 **Website Management**:
 - Create new websites (automatically creates folder structure and config files)
-- Edit website settings
+- Edit website settings (Stripe keys, Shippo credentials, email config, tax rates, shipping)
 - Delete websites
 - Each website gets its own database automatically created
+- Configure early access password protection
 
 **Article/Content Management**:
 - Create, edit, and delete articles
 - Set article type (article, page, gallery)
 - Set status (draft, published, archived)
 - Manage article content, excerpts, and metadata
+- Set published dates and featured flag
+- Assign categories, authors, and tags
+- Manage multi-slide galleries with images
 
 **Product Management**:
 - Create, edit, and delete products
@@ -214,16 +260,56 @@ The admin backend is configured in `websites/env-dev.json`:
 - Manage inventory and SKUs
 - Set product status and featured flag
 - Configure inventory policies
+- Add product variants (size, color, etc.)
+- Upload multiple product images with ordering
+- Assign products to collections
+- Reorder products with up/down controls
+- Set release dates
+
+**Order Management**:
+- View all orders with filtering and sorting
+- View order details (items, customer info, shipping, payment)
+- Update order status (pending, processing, fulfilled, cancelled)
+- View payment and fulfillment status
+- Add tracking numbers
+- Resend order confirmation emails
+- View order timeline and notes
+
+**Customer Management**:
+- View all customers with stats (order count, total spent)
+- Filter and sort customers by total spent, order count, date joined
+- View customer details and order history
+- View Stripe customer ID integration
+- Track first and last order dates
+- Calculate average order value
+
+**SMS Signups Management**:
+- View all SMS signups
+- Filter by country code, source, and date range
+- Sort by date or phone number
+- Export filtered data to CSV
+- Delete signups
+- Track signup source (which page/form)
 
 **Category & Collection Management**:
 - Create and delete article categories
 - Create and delete product collections
 - Automatically generates slugs
+- Assign multiple collections to products
 
 **Image Management**:
 - Upload and manage images
 - Track image URLs and metadata
-- Use images in articles and products
+- Use images in articles, products, and galleries
+- Set alt text and credits
+
+**Site Settings**:
+- Configure Stripe integration
+- Configure Shippo shipping
+- Set email sender details (AWS SES)
+- Configure tax rates
+- Set flat shipping costs
+- Manage early access settings
 
 ### Admin Database
 
@@ -368,17 +454,71 @@ Located at `websites/{site}/config-dev.json` or `websites/{site}/config-prod.jso
 
 ```json
 {
-  "siteName": "example.com",           // Domain name
-  "apiVersion": 1,                     // API version (currently only v1)
+  "siteName": "example.com",
+  "apiVersion": 1,
   "database": {
-    "name": "example_db"               // Site-specific database
+    "name": "example_db"
   },
-  "mediaProxyUrl": "https://media.example.com",  // Optional media proxy URL
+  "mediaProxyUrl": "https://media.example.com",
   "http": {
-    "address": "example.com"           // Host header for routing
+    "address": "example.com"
+  },
+  "stripe": {
+    "publishableKey": "pk_test_...",
+    "secretKey": "sk_test_..."
+  },
+  "shippo": {
+    "apiKey": "shippo_test_...",
+    "labelFormat": "PDF"
+  },
+  "email": {
+    "provider": "ses",
+    "fromAddress": "orders@example.com",
+    "fromName": "Example Store",
+    "replyTo": "support@example.com"
+  },
+  "ecommerce": {
+    "taxRate": 0.08,
+    "flatShippingCost": 5.00
+  },
+  "earlyAccess": {
+    "enabled": false,
+    "password": "your-password-here"
+  },
+  "shipFrom": {
+    "name": "Example Warehouse",
+    "street1": "123 Main St",
+    "city": "San Francisco",
+    "state": "CA",
+    "zip": "94102",
+    "country": "US",
+    "phone": "415-555-0100"
   }
 }
 ```
+
+**Configuration Fields:**
+
+| Field | Description |
+|-------|-------------|
+| `siteName` | Domain name for the website |
+| `apiVersion` | API version (currently only v1 supported) |
+| `database.name` | Site-specific database name |
+| `mediaProxyUrl` | Optional media proxy URL for image resizing |
+| `http.address` | Host header for routing requests |
+| `stripe.publishableKey` | Stripe publishable key for frontend |
+| `stripe.secretKey` | Stripe secret key for backend |
+| `shippo.apiKey` | Shippo API key for shipping |
+| `shippo.labelFormat` | Label format (PDF, PNG, ZPLII) |
+| `email.provider` | Email provider (currently only "ses" supported) |
+| `email.fromAddress` | Sender email address |
+| `email.fromName` | Sender name |
+| `email.replyTo` | Reply-to email address |
+| `ecommerce.taxRate` | Tax rate as decimal (0.08 = 8%) |
+| `ecommerce.flatShippingCost` | Flat shipping cost (if not using Shippo) |
+| `earlyAccess.enabled` | Enable early access password protection |
+| `earlyAccess.password` | Password for early access |
+| `shipFrom.*` | Default shipping origin address for Shippo |
 
 ### Template Configuration
 
@@ -723,95 +863,435 @@ This eliminates code duplication and makes it easy to maintain consistent brandi
 {{ end }}
 ```
 
+## Analytics System
+
+Stencil2 includes a built-in, privacy-focused analytics system that tracks visitor behavior, e-commerce conversions, and site performance without relying on external services like Google Analytics.
+
+### How It Works
+
+The analytics system uses a lightweight JavaScript tracker (~2KB) that automatically:
+- Tracks pageviews on initial page load
+- Generates unique session IDs stored in localStorage (30-minute timeout)
+- Sends heartbeat signals every 30 seconds to track active sessions
+- Detects device type (mobile/tablet/desktop) from screen dimensions
+- Pauses tracking when the browser tab is hidden
+
+All analytics data is stored in MySQL tables within each website's database:
+- `analytics_pageviews` - Page visits with session, path, referrer, user agent, IP, and screen dimensions
+- `analytics_events` - Custom events with event name, data payload, and session context
+
+### JavaScript API
+
+The analytics tracker is automatically loaded on all pages via `/public/analytics.js` and exposes a global `window.analytics` object:
+
+#### Automatic Tracking
+
+```javascript
+// Pageviews are tracked automatically on page load
+// No code needed - just include the script tag
+```
+
+#### Custom Event Tracking
+
+```javascript
+// Track a custom event
+analytics.track('event_name', { key: 'value' });
+
+// E-commerce helpers
+analytics.trackAddToCart(productId, 'Product Name', 29.99, 1);
+analytics.trackRemoveFromCart(productId);
+analytics.trackCheckoutStarted(149.99, 3); // cart value, item count
+analytics.trackPurchase('ORD-12345', 149.99, 3); // order ID, total, item count
+
+// Content engagement helpers
+analytics.trackScrollDepth(75); // percentage
+analytics.trackClick('button', 'Subscribe CTA');
+```
+
+#### Session Management
+
+Sessions are automatically managed:
+- New session created on first visit
+- Session ID persists in localStorage for 30 minutes of inactivity
+- Session extends with each pageview or heartbeat
+- Sessions expire after 30 minutes of no activity
+
+### Admin Dashboard
+
+Access analytics for each website via the admin panel at `/site/{id}/analytics`.
+
+**Available Metrics:**
+
+**Real-Time**
+- Active users (last 5 minutes)
+- Current pages being viewed
+- Live activity feed
+
+**Traffic Overview**
+- Total pageviews
+- Unique visitors (sessions)
+- Average pages per visit
+- Bounce rate (single-page sessions)
+- Average session duration
+
+**E-Commerce** (requires purchase tracking)
+- Total revenue
+- Number of orders
+- Average order value
+- Conversion rate (% of sessions with purchases)
+- Cart abandonment rate (% who add to cart but don't buy)
+
+**User Behavior**
+- Top pages (most viewed)
+- Entry pages (where users land)
+- Exit pages (where users leave)
+- Top referrers (traffic sources)
+- Device breakdown (mobile/tablet/desktop)
+
+**Custom Events**
+- All tracked custom events with counts
+- Filtered view (heartbeats hidden)
+
+**Time Periods**
+- Last 7 days
+- Last 30 days (default)
+- Last 90 days
+- Last year
+
+### Privacy & Performance
+
+**Privacy Features:**
+- No cookies required (uses localStorage for session management)
+- No third-party requests (all data stays on your server)
+- IP addresses stored but not used for tracking individuals
+- No cross-site tracking or advertising IDs
+- Full data ownership and control
+
+**Performance:**
+- Minimal JavaScript footprint (~2KB gzipped)
+- Async beacon API (doesn't block page load)
+- Automatic heartbeat pauses when tab is hidden
+- Database indexes on frequently queried columns
+- Efficient aggregation queries for dashboard
+
+**Database Tables:**
+
+```sql
+CREATE TABLE analytics_pageviews (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    session_id VARCHAR(100) NOT NULL,
+    path VARCHAR(500) NOT NULL,
+    referrer VARCHAR(500),
+    user_agent VARCHAR(500),
+    ip_address VARCHAR(100),
+    screen_width INT,
+    screen_height INT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_session (session_id),
+    INDEX idx_created (created_at),
+    INDEX idx_path (path(255))
+);
+
+CREATE TABLE analytics_events (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    session_id VARCHAR(100) NOT NULL,
+    event_name VARCHAR(100) NOT NULL,
+    event_data JSON,
+    path VARCHAR(500),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_session (session_id),
+    INDEX idx_event (event_name),
+    INDEX idx_created (created_at)
+);
+```
+
+**Auto-Deployment:**
+
+The analytics JavaScript file is automatically copied from `frontend/static/analytics.js` to each website's `public/` directory on server startup, ensuring all sites stay in sync with the latest tracker version.
+
 ## API Endpoints
 
-Stencil2 provides a RESTful JSON API (v1) for all configured websites.
+Stencil2 provides a comprehensive RESTful JSON API (v1) for all configured websites.
 
-### Categories
+### Content Endpoints
 
-**GET** `/api/v1/categories`
+#### Categories
+
+**GET** `/api/v1/categories` - Get all categories
 
 Query Parameters:
 - `full=true` - Include category images
 
-Response:
-```json
-[
-  {
-    "id": 1,
-    "name": "Technology",
-    "slug": "technology",
-    "description": "Latest tech news",
-    "image_url": "https://example.com/tech.jpg",
-    "alt_text": "Technology"
-  }
-]
-```
+#### Posts
 
-### Posts List
-
-**GET** `/api/v1/posts`
-**GET** `/api/v1/posts/{count}`
-**GET** `/api/v1/posts/{count}/{offset}`
+**GET** `/api/v1/posts` - Get all posts
+**GET** `/api/v1/posts/{count}` - Get N posts
+**GET** `/api/v1/posts/{count}/{offset}` - Get N posts with offset
 
 Query Parameters:
 - `full=true` - Include post content and slides
 - `featured=false` - Exclude featured posts
 - `sort=modified` - Sort by modified date instead of published date
 
-Response:
-```json
-[
-  {
-    "id": 123,
-    "slug": "example-article",
-    "title": "Example Article",
-    "type": "article",
-    "published_date": "2025-01-15T10:00:00Z",
-    "deck": "Article summary",
-    "url": "/example-article",
-    "image": {
-      "id": 456,
-      "url": "https://example.com/image.jpg",
-      "alt_text": "Example"
-    },
-    "authors": [...],
-    "categories": [...],
-    "tags": [...]
-  }
-]
-```
-
-### Single Post
-
-**GET** `/api/v1/post/{slug}`
+**GET** `/api/v1/post/{slug}` - Get single post by slug
 
 Query Parameters:
 - `preview=true` - Get draft/preview version of post
 
-Response: Single post object with full content and slides
+#### Taxonomy Posts
 
-### Taxonomy Posts
-
-**GET** `/api/v1/{taxonomy}/{slug}/posts`
-**GET** `/api/v1/{taxonomy}/{slug}/posts/{count}/{offset}`
+**GET** `/api/v1/{taxonomy}/{slug}/posts` - Get posts by taxonomy
+**GET** `/api/v1/{taxonomy}/{slug}/posts/{count}/{offset}` - With pagination
 
 Taxonomy types: `category`, `tag`, `author`, `type`
 
-Example:
-- `/api/v1/category/technology/posts/10`
-- `/api/v1/author/john-doe/posts`
-- `/api/v1/tag/ai/posts/20/40`
+---
+
+### E-commerce Endpoints
+
+#### Products
+
+**GET** `/api/v1/products` - Get all products
+**GET** `/api/v1/products/{count}` - Get N products
+**GET** `/api/v1/products/{count}/{offset}` - Get N products with offset
+
+**GET** `/api/v1/product/{slug}` - Get single product by slug
+
+#### Collections
+
+**GET** `/api/v1/collections` - Get all collections
+**GET** `/api/v1/collection/{slug}/products` - Get products in collection
+**GET** `/api/v1/collection/{slug}/products/{count}/{offset}` - With pagination
+
+#### Shopping Cart
+
+**POST** `/api/v1/cart/add` - Add item to cart
+
+Request body:
+```json
+{
+  "product_id": 123,
+  "variant_id": 456,
+  "quantity": 2
+}
+```
+
+**POST** `/api/v1/cart/update` - Update cart item quantity
+
+Request body:
+```json
+{
+  "item_id": 789,
+  "quantity": 3
+}
+```
+
+**POST** `/api/v1/cart/remove` - Remove item from cart
+
+Request body:
+```json
+{
+  "item_id": 789
+}
+```
+
+**GET** `/api/v1/cart` - Get current cart contents
+
+#### Checkout & Orders
+
+**POST** `/api/v1/payment-intent` - Create Stripe payment intent
+
+Request body:
+```json
+{
+  "email": "customer@example.com",
+  "shipping": {
+    "name": "John Doe",
+    "address": {
+      "line1": "123 Main St",
+      "city": "San Francisco",
+      "state": "CA",
+      "postal_code": "94102",
+      "country": "US"
+    },
+    "phone": "415-555-0100"
+  }
+}
+```
+
+**POST** `/api/v1/checkout` - Create order from cart
+
+Request body:
+```json
+{
+  "payment_intent_id": "pi_...",
+  "customer_email": "customer@example.com",
+  "customer_name": "John Doe",
+  "shipping_address": {...},
+  "billing_address": {...}
+}
+```
+
+**GET** `/api/v1/order/{orderNumber}` - Get order details
+
+**POST** `/api/v1/webhook/stripe` - Stripe webhook handler (for payment events)
+
+#### Shipping
+
+**POST** `/api/v1/shipping/rates` - Get shipping rates
+
+Request body:
+```json
+{
+  "address": {
+    "name": "John Doe",
+    "street1": "123 Main St",
+    "city": "San Francisco",
+    "state": "CA",
+    "zip": "94102",
+    "country": "US"
+  },
+  "parcel": {
+    "length": "10",
+    "width": "8",
+    "height": "4",
+    "weight": "1.5"
+  }
+}
+```
+
+**POST** `/api/v1/shipping/validate-address` - Validate shipping address
+
+Request body:
+```json
+{
+  "name": "John Doe",
+  "street1": "123 Main St",
+  "city": "San Francisco",
+  "state": "CA",
+  "zip": "94102",
+  "country": "US"
+}
+```
+
+**POST** `/api/v1/shipping/purchase-label` - Purchase shipping label
+
+Request body:
+```json
+{
+  "rate_id": "rate_...",
+  "label_format": "PDF"
+}
+```
+
+**GET** `/api/v1/shipping/track/{carrier}/{trackingNumber}` - Track shipment
+
+---
+
+### Marketing Endpoints
+
+**POST** `/api/v1/sms-signup` - Submit SMS signup
+
+Request body:
+```json
+{
+  "countryCode": "+1",
+  "phone": "4155550100",
+  "email": "customer@example.com",
+  "source": "homepage-banner"
+}
+```
+
+---
+
+### Analytics Endpoints
+
+**POST** `/api/v1/track` - Track analytics events
+
+The analytics tracking endpoint accepts three types of events: pageviews, custom events, and heartbeats. All requests return `204 No Content` for minimal overhead.
+
+**Pageview Tracking:**
+
+Request body:
+```json
+{
+  "s": "session-uuid",
+  "t": "p",
+  "p": "/products/example",
+  "r": "https://google.com",
+  "sw": 1920,
+  "sh": 1080,
+  "dt": "desktop"
+}
+```
+
+**Custom Event Tracking:**
+
+Request body:
+```json
+{
+  "s": "session-uuid",
+  "t": "e",
+  "p": "/products/example",
+  "e": "add_to_cart",
+  "d": {
+    "product_id": "123",
+    "product_name": "Example Product",
+    "price": 29.99,
+    "quantity": 1
+  },
+  "dt": "mobile"
+}
+```
+
+**Heartbeat (Session Extension):**
+
+Request body:
+```json
+{
+  "s": "session-uuid",
+  "t": "h",
+  "p": "/products/example"
+}
+```
+
+**Request Parameters:**
+- `s` - Session ID (UUID stored in localStorage)
+- `t` - Event type: `p` (pageview), `e` (event), `h` (heartbeat)
+- `p` - Current page path
+- `r` - Referrer URL (pageviews only)
+- `e` - Event name (custom events only)
+- `d` - Event data object (custom events only)
+- `sw` - Screen width in pixels
+- `sh` - Screen height in pixels
+- `dt` - Device type: `mobile`, `tablet`, `desktop`
+
+**Response:** `204 No Content` (always, even on errors)
+
+**E-Commerce Events:**
+
+Built-in event tracking for e-commerce conversions:
+- `add_to_cart` - Product added to cart
+- `checkout_started` - Customer initiated checkout
+- `purchase` - Order completed and paid
+
+---
+
+### Configuration
+
+**GET** `/api/v1/config` - Get website configuration (Stripe publishable key, etc.)
 
 ## Database Schema
 
-Stencil2 expects the following core tables (minimal schema):
+Stencil2 automatically creates all necessary tables on first startup. Here's the complete schema:
+
+### Content Tables
 
 ```sql
 -- Articles/Posts
 CREATE TABLE articles_unified (
-    id INT PRIMARY KEY,
-    name VARCHAR(255),           -- slug
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) UNIQUE,    -- slug
     title VARCHAR(255),
     type VARCHAR(50),            -- article, gallery, page
     published_date DATETIME,
@@ -820,19 +1300,21 @@ CREATE TABLE articles_unified (
     content TEXT,
     deck TEXT,                   -- summary/excerpt
     coverline VARCHAR(255),
-    status VARCHAR(50),          -- published, draft
+    status VARCHAR(50),          -- published, draft, archived
     thumbnail_id INT,
     url VARCHAR(255),
     canonical_url VARCHAR(255),
     keywords TEXT,
-    featured TINYINT DEFAULT 0
+    featured TINYINT DEFAULT 0,
+    INDEX idx_status (status),
+    INDEX idx_published_date (published_date)
 );
 
 -- Categories
 CREATE TABLE categories_unified (
-    id INT PRIMARY KEY,
+    id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(255),
-    slug VARCHAR(255),
+    slug VARCHAR(255) UNIQUE,
     description TEXT,
     image_id INT,
     count INT DEFAULT 0
@@ -840,23 +1322,23 @@ CREATE TABLE categories_unified (
 
 -- Authors
 CREATE TABLE authors_unified (
-    id INT PRIMARY KEY,
+    id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(255),
-    slug VARCHAR(255),
+    slug VARCHAR(255) UNIQUE,
     bio TEXT,
     image_id INT
 );
 
 -- Tags
 CREATE TABLE tags_unified (
-    id INT PRIMARY KEY,
+    id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(255),
-    slug VARCHAR(255)
+    slug VARCHAR(255) UNIQUE
 );
 
 -- Images
 CREATE TABLE images_unified (
-    id INT PRIMARY KEY,
+    id INT PRIMARY KEY AUTO_INCREMENT,
     url VARCHAR(500),
     alt_text VARCHAR(255),
     credit VARCHAR(255)
@@ -864,29 +1346,33 @@ CREATE TABLE images_unified (
 
 -- Gallery Slides
 CREATE TABLE article_slides (
-    id INT PRIMARY KEY,
+    id INT PRIMARY KEY AUTO_INCREMENT,
     post_id INT,
     slide_position INT,
     title VARCHAR(255),
     pre_image_desc TEXT,
     description TEXT,
-    image_id INT
+    image_id INT,
+    INDEX idx_post_id (post_id)
 );
 
 -- Relationship Tables
 CREATE TABLE article_authors (
     post_id INT,
-    author_id INT
+    author_id INT,
+    PRIMARY KEY (post_id, author_id)
 );
 
 CREATE TABLE article_categories (
     post_id INT,
-    category_id INT
+    category_id INT,
+    PRIMARY KEY (post_id, category_id)
 );
 
 CREATE TABLE article_tags (
     post_id INT,
-    tag_id INT
+    tag_id INT,
+    PRIMARY KEY (post_id, tag_id)
 );
 
 -- Sitemap Management
@@ -894,6 +1380,250 @@ CREATE TABLE article_sitemaps (
     sitemap_date DATE PRIMARY KEY,
     complete TINYINT DEFAULT 0,
     completed_time DATETIME
+);
+```
+
+### E-commerce Tables
+
+```sql
+-- Customers
+CREATE TABLE customers (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    stripe_customer_id VARCHAR(255) UNIQUE,
+    first_name VARCHAR(255),
+    last_name VARCHAR(255),
+    phone VARCHAR(50),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_email (email),
+    INDEX idx_stripe_customer_id (stripe_customer_id)
+);
+
+-- Products
+CREATE TABLE products_unified (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255),
+    slug VARCHAR(255) UNIQUE,
+    description TEXT,
+    price DECIMAL(10, 2),
+    compare_at_price DECIMAL(10, 2),
+    sku VARCHAR(255),
+    inventory_quantity INT DEFAULT 0,
+    inventory_policy VARCHAR(50),  -- deny, continue
+    status VARCHAR(50),             -- active, draft, archived
+    featured TINYINT DEFAULT 0,
+    released_date DATETIME,
+    sort_order INT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_slug (slug),
+    INDEX idx_status (status),
+    INDEX idx_sort_order (sort_order)
+);
+
+-- Product Variants
+CREATE TABLE product_variants (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    product_id INT,
+    title VARCHAR(255),
+    price DECIMAL(10, 2),
+    sku VARCHAR(255),
+    inventory_quantity INT DEFAULT 0,
+    option1 VARCHAR(255),
+    option2 VARCHAR(255),
+    option3 VARCHAR(255),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_product_id (product_id),
+    FOREIGN KEY (product_id) REFERENCES products_unified(id) ON DELETE CASCADE
+);
+
+-- Product Images
+CREATE TABLE product_images_data (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    product_id INT,
+    url VARCHAR(500),
+    alt_text VARCHAR(255),
+    position INT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_product_id (product_id),
+    FOREIGN KEY (product_id) REFERENCES products_unified(id) ON DELETE CASCADE
+);
+
+-- Collections
+CREATE TABLE collections_unified (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255),
+    slug VARCHAR(255) UNIQUE,
+    description TEXT,
+    image_url VARCHAR(500),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Product-Collection Relationship
+CREATE TABLE product_collections (
+    product_id INT,
+    collection_id INT,
+    PRIMARY KEY (product_id, collection_id),
+    FOREIGN KEY (product_id) REFERENCES products_unified(id) ON DELETE CASCADE,
+    FOREIGN KEY (collection_id) REFERENCES collections_unified(id) ON DELETE CASCADE
+);
+
+-- Shopping Carts
+CREATE TABLE carts (
+    id VARCHAR(255) PRIMARY KEY,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME,
+    INDEX idx_expires_at (expires_at)
+);
+
+-- Cart Items
+CREATE TABLE cart_items (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    cart_id VARCHAR(255),
+    product_id INT,
+    variant_id INT,
+    quantity INT DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_cart_id (cart_id),
+    FOREIGN KEY (cart_id) REFERENCES carts(id) ON DELETE CASCADE
+);
+
+-- Orders
+CREATE TABLE orders (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    order_number VARCHAR(50) UNIQUE,
+    customer_id INT,
+    customer_email VARCHAR(255),
+    customer_name VARCHAR(255),
+    stripe_payment_intent_id VARCHAR(255),
+    subtotal DECIMAL(10, 2),
+    tax DECIMAL(10, 2),
+    shipping DECIMAL(10, 2),
+    total DECIMAL(10, 2),
+    status VARCHAR(50),              -- pending, processing, fulfilled, cancelled
+    payment_status VARCHAR(50),      -- pending, paid, failed
+    fulfillment_status VARCHAR(50),  -- unfulfilled, fulfilled, partial
+    shipping_name VARCHAR(255),
+    shipping_address_line1 VARCHAR(255),
+    shipping_address_line2 VARCHAR(255),
+    shipping_city VARCHAR(255),
+    shipping_state VARCHAR(50),
+    shipping_postal_code VARCHAR(50),
+    shipping_country VARCHAR(50),
+    shipping_phone VARCHAR(50),
+    billing_name VARCHAR(255),
+    billing_address_line1 VARCHAR(255),
+    billing_address_line2 VARCHAR(255),
+    billing_city VARCHAR(255),
+    billing_state VARCHAR(50),
+    billing_postal_code VARCHAR(50),
+    billing_country VARCHAR(50),
+    tracking_number VARCHAR(255),
+    tracking_carrier VARCHAR(255),
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_order_number (order_number),
+    INDEX idx_customer_id (customer_id),
+    INDEX idx_customer_email (customer_email),
+    INDEX idx_status (status),
+    INDEX idx_created_at (created_at),
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
+);
+
+-- Order Items
+CREATE TABLE order_items (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    order_id INT,
+    product_id INT,
+    variant_id INT,
+    product_name VARCHAR(255),
+    variant_title VARCHAR(255),
+    sku VARCHAR(255),
+    quantity INT,
+    price DECIMAL(10, 2),
+    INDEX idx_order_id (order_id),
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+);
+```
+
+### Marketing Tables
+
+```sql
+-- SMS Signups
+CREATE TABLE sms_signups (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    country_code VARCHAR(10) DEFAULT '+1',
+    phone VARCHAR(50) NOT NULL UNIQUE,
+    email VARCHAR(255) DEFAULT NULL,
+    source VARCHAR(100) DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_created_at (created_at),
+    INDEX idx_country_code (country_code)
+);
+```
+
+### Analytics Tables
+
+```sql
+-- Page Views
+CREATE TABLE analytics_pageviews (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    session_id VARCHAR(100),
+    path VARCHAR(500),
+    referrer VARCHAR(500),
+    user_agent TEXT,
+    ip_address VARCHAR(45),
+    screen_width INT,
+    screen_height INT,
+    device_type VARCHAR(20),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_session (session_id),
+    INDEX idx_path (path),
+    INDEX idx_created (created_at)
+);
+
+-- Custom Events
+CREATE TABLE analytics_events (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    session_id VARCHAR(100),
+    event_name VARCHAR(100),
+    event_data JSON,
+    path VARCHAR(500),
+    device_type VARCHAR(20),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_session (session_id),
+    INDEX idx_event (event_name),
+    INDEX idx_created (created_at)
+);
+```
+
+### Admin Tables
+
+The admin uses its own database (`stencil_admin` by default):
+
+```sql
+-- Admin Website Registry
+CREATE TABLE admin_websites (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    site_name VARCHAR(255) UNIQUE,
+    database_name VARCHAR(255),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Admin Activity Log
+CREATE TABLE admin_activity_log (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    website_id INT,
+    action VARCHAR(255),
+    entity_type VARCHAR(100),
+    entity_id INT,
+    details TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_website_id (website_id),
+    INDEX idx_created_at (created_at)
 );
 ```
 

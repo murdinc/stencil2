@@ -11,6 +11,7 @@ import (
 type EnvironmentConfig struct {
 	ProdMode   bool
 	HideErrors bool
+	BaseURL    string `json:"baseUrl"` // Base URL for webhooks (e.g., "https://example.com")
 	Database   struct {
 		Host     string `json:"host"`
 		User     string `json:"user"`
@@ -30,12 +31,6 @@ type EnvironmentConfig struct {
 		} `json:"database"`
 	} `json:"admin"`
 	Email struct {
-		Provider string `json:"provider"`
-		SES      struct {
-			Region          string `json:"region"`
-			AccessKeyID     string `json:"accessKeyId"`
-			SecretAccessKey string `json:"secretAccessKey"`
-		} `json:"ses"`
 		Admin struct {
 			FromAddress string `json:"fromAddress"`
 			FromName    string `json:"fromName"`

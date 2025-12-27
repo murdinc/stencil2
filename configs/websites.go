@@ -27,10 +27,29 @@ type WebsiteConfig struct {
 		APIKey      string `json:"apiKey"`
 		LabelFormat string `json:"labelFormat"` // PDF, PDF_4x6, ZPLII, PNG
 	} `json:"shippo"`
+	Twilio struct {
+		AccountSID string `json:"accountSid"`
+		AuthToken  string `json:"authToken"`
+		FromPhone  string `json:"fromPhone"` // E.164 format: +14155551234
+	} `json:"twilio"`
 	Email struct {
 		FromAddress string `json:"fromAddress"`
 		FromName    string `json:"fromName"`
 		ReplyTo     string `json:"replyTo"`
+		IMAP        struct {
+			Server   string `json:"server"`   // e.g., imap.gmail.com
+			Port     int    `json:"port"`     // e.g., 993
+			Username string `json:"username"` // email address
+			Password string `json:"password"` // app password
+			UseTLS   bool   `json:"useTLS"`   // usually true for Gmail
+		} `json:"imap"`
+		SMTP struct {
+			Server   string `json:"server"`   // e.g., smtp.gmail.com
+			Port     int    `json:"port"`     // e.g., 587
+			Username string `json:"username"` // email address
+			Password string `json:"password"` // app password
+			UseTLS   bool   `json:"useTLS"`   // usually true for Gmail
+		} `json:"smtp"`
 	} `json:"email"`
 	Ecommerce struct {
 		TaxRate      float64 `json:"taxRate"`      // e.g., 0.08 for 8%
@@ -49,6 +68,8 @@ type WebsiteConfig struct {
 		Zip     string `json:"zip"`
 		Country string `json:"country"`
 	} `json:"shipFrom"`
+	RobotsTxt string `json:"robotsTxt"` // robots.txt content, editable in admin
+	Logo      string `json:"logo"`      // Path or URL to site logo for packing slips
 	Directory string
 }
 

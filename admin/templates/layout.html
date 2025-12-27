@@ -314,7 +314,16 @@
             const select = document.getElementById('site-selector');
             const siteId = select.value;
             if (siteId) {
-                window.location.href = '/site/' + siteId;
+                // Get current path to preserve the active section
+                const path = window.location.pathname;
+                const match = path.match(/\/site\/[^\/]+\/(.+)/);
+
+                // If we're on a specific section, stay on that section for the new site
+                if (match && match[1]) {
+                    window.location.href = '/site/' + siteId + '/' + match[1];
+                } else {
+                    window.location.href = '/site/' + siteId;
+                }
             }
         }
     </script>
@@ -342,6 +351,12 @@
     <!-- Sidebar -->
     <div class="sidebar">
         <div class="sidebar-section">
+            <h3>Dashboard</h3>
+            <a href="/site/{{.CurrentSite.ID}}" class="sidebar-link {{if eq .ActiveSection "overview"}}active{{end}}">Overview</a>
+            <a href="/site/{{.CurrentSite.ID}}/messages" class="sidebar-link {{if eq .ActiveSection "messages"}}active{{end}}">Messages</a>
+            <a href="/site/{{.CurrentSite.ID}}/analytics" class="sidebar-link {{if eq .ActiveSection "analytics"}}active{{end}}">Analytics</a>
+        </div>
+        <div class="sidebar-section">
             <h3>Content</h3>
             <a href="/site/{{.CurrentSite.ID}}/articles" class="sidebar-link {{if eq .ActiveSection "articles"}}active{{end}}">Articles</a>
             <a href="/site/{{.CurrentSite.ID}}/categories" class="sidebar-link {{if eq .ActiveSection "categories"}}active{{end}}">Categories</a>
@@ -357,10 +372,12 @@
         <div class="sidebar-section">
             <h3>Marketing</h3>
             <a href="/site/{{.CurrentSite.ID}}/sms-signups" class="sidebar-link {{if eq .ActiveSection "sms-signups"}}active{{end}}">SMS Signups</a>
+            <a href="/site/{{.CurrentSite.ID}}/sms-campaigns" class="sidebar-link {{if eq .ActiveSection "sms-campaigns"}}active{{end}}">SMS Campaigns</a>
         </div>
         <div class="sidebar-section">
             <h3>Settings</h3>
             <a href="/site/{{.CurrentSite.ID}}/settings" class="sidebar-link {{if eq .ActiveSection "settings"}}active{{end}}">Site Settings</a>
+            <a href="/site/{{.CurrentSite.ID}}/webhooks" class="sidebar-link {{if eq .ActiveSection "webhooks"}}active{{end}}">Webhooks</a>
         </div>
     </div>
 

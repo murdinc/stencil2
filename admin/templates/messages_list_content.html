@@ -1,0 +1,115 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>Messages</h2>
+    <p>Contact form submissions</p>
+</div>
+
+{{if .Messages}}
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 40px;"></th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Message</th>
+                <th>Date</th>
+                <th>Replies</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Messages}}
+            <tr class="message-row" data-href="/site/{{$.Website.ID}}/messages/{{.ID}}" style="{{if eq .Status "unread"}}background: #fff4e6; font-weight: 600;{{end}} cursor: pointer;">
+                <td style="text-align: center;">
+                    {{if eq .Status "unread"}}
+                    <span style="display: inline-block; width: 10px; height: 10px; background: #f56565; border-radius: 50%;"></span>
+                    {{else}}
+                    <span style="display: inline-block; width: 10px; height: 10px; background: #e2e8f0; border-radius: 50%;"></span>
+                    {{end}}
+                </td>
+                <td><strong>{{.Name}}</strong></td>
+                <td>{{.Email}}</td>
+                <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    {{.Message}}
+                </td>
+                <td>{{.CreatedAt.Format "Jan 2, 2006 3:04 PM"}}</td>
+                <td style="text-align: center;">
+                    {{if gt .ReplyCount 0}}
+                    <span style="display: inline-flex; align-items: center; gap: 4px; color: #667eea; font-weight: 600;">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M8 15c4.418 0 8-3.134 8-7s-3.582-7-8-7-8 3.134-8 7c0 1.76.743 3.37 1.97 4.6-.097 1.016-.417 2.13-.771 2.966-.079.186.074.394.273.362 2.256-.37 3.597-.938 4.18-1.234A9.06 9.06 0 0 0 8 15z"/>
+                        </svg>
+                        {{.ReplyCount}}
+                        {{if .LastReplyAt}}
+                        <span style="color: #a0aec0; font-size: 12px; font-weight: 400;">
+                            ({{.LastReplyAt.Format "Jan 2"}})
+                        </span>
+                        {{end}}
+                    </span>
+                    {{else}}
+                    <span style="color: #cbd5e0;">—</span>
+                    {{end}}
+                </td>
+                <td>
+                    <a href="/site/{{$.Website.ID}}/messages/{{.ID}}" class="btn btn-sm">View</a>
+                    <form action="/site/{{$.Website.ID}}/messages/{{.ID}}/toggle-read" method="POST" style="display: inline;" onclick="event.stopPropagation();">
+                        {{if eq .Status "unread"}}
+                        <button type="submit" class="btn btn-sm">Mark Read</button>
+                        {{else}}
+                        <button type="submit" class="btn btn-sm">Mark Unread</button>
+                        {{end}}
+                    </form>
+                    <form action="/site/{{$.Website.ID}}/messages/{{.ID}}/delete" method="POST" style="display: inline;" onclick="event.stopPropagation();" onsubmit="return confirm('Are you sure you want to delete this message? This cannot be undone.');">
+                        <button type="submit" class="btn btn-sm" style="background: #e53e3e; border-color: #e53e3e;">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="card">
+    <div class="empty-state">
+        <h3>No Messages Yet</h3>
+        <p>Contact form submissions will appear here.</p>
+    </div>
+</div>
+{{end}}
+
+<script>
+// Make table rows clickable
+document.addEventListener('DOMContentLoaded', function() {
+    const messageRows = document.querySelectorAll('.message-row');
+
+    messageRows.forEach(function(row) {
+        row.addEventListener('click', function(e) {
+            // Don't navigate if clicking on a button, link, or form
+            if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A' || e.target.closest('form')) {
+                return;
+            }
+
+            const href = this.getAttribute('data-href');
+            if (href) {
+                window.location.href = href;
+            }
+        });
+
+        // Add hover effect
+        row.addEventListener('mouseenter', function() {
+            if (!this.style.backgroundColor || this.style.backgroundColor === '') {
+                this.style.backgroundColor = '#f7fafc';
+            }
+        });
+
+        row.addEventListener('mouseleave', function() {
+            // Only remove hover if it's not an unread message
+            if (!this.style.backgroundColor.includes('fff4e6')) {
+                this.style.backgroundColor = '';
+            }
+        });
+    });
+});
+</script>
+{{end}}

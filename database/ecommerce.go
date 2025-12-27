@@ -198,9 +198,15 @@ func (db *DBConnection) InitEcommerceTables() error {
 			phone VARCHAR(50) NOT NULL UNIQUE,
 			email VARCHAR(255) DEFAULT NULL,
 			source VARCHAR(100) DEFAULT NULL,
+			verified TINYINT DEFAULT 0,
+			verification_code VARCHAR(10) DEFAULT NULL,
+			verification_expires_at DATETIME DEFAULT NULL,
+			unsubscribed TINYINT DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-			INDEX idx_created_at (created_at)
+			INDEX idx_created_at (created_at),
+			INDEX idx_verified (verified),
+			INDEX idx_unsubscribed (unsubscribed)
 		)`,
 	}
 
@@ -1053,6 +1059,65 @@ func (db *DBConnection) UpdateOrderPaymentStatusByIntentID(paymentIntentID strin
 	return err
 }
 
+// UpdateOrderTrackingStatus updates the tracking status of an order
+func (db *DBConnection) UpdateOrderTrackingStatus(trackingNumber, trackingStatus string) error {
+	sqlQuery := `
+		UPDATE orders
+		SET fulfillment_status = ?, updated_at = NOW()
+		WHERE tracking_number = ?
+	`
+	_, err := db.ExecuteQuery(sqlQuery, trackingStatus, trackingNumber)
+	return err
+}
+
+// GetOrderByTrackingNumber retrieves an order by tracking number
+func (db *DBConnection) GetOrderByTrackingNumber(trackingNumber string) (structs.Order, error) {
+	sqlQuery := `
+		SELECT
+			id, order_number, customer_email, customer_name,
+			shipping_address_line1, shipping_address_line2,
+			shipping_city, shipping_state, shipping_zip, shipping_country,
+			subtotal, tax, shipping_cost, total,
+			payment_status, fulfillment_status, payment_method,
+			stripe_payment_intent_id, tracking_number, shipping_carrier,
+			created_at, updated_at
+		FROM orders
+		WHERE tracking_number = ?
+		LIMIT 1
+	`
+
+	var order structs.Order
+	var shippingLine2, paymentMethod, stripeIntent, trackingNum, carrier sql.NullString
+
+	err := db.QueryRow(sqlQuery, trackingNumber).Scan(
+		&order.ID, &order.OrderNumber, &order.CustomerEmail, &order.CustomerName,
+		&order.ShippingAddressLine1, &shippingLine2,
+		&order.ShippingCity, &order.ShippingState, &order.ShippingZip, &order.ShippingCountry,
+		&order.Subtotal, &order.Tax, &order.ShippingCost, &order.Total,
+		&order.PaymentStatus, &order.FulfillmentStatus, &paymentMethod,
+		&stripeIntent, &trackingNum, &carrier,
+		&order.CreatedAt, &order.UpdatedAt,
+	)
+
+	if err != nil {
+		return structs.Order{}, err
+	}
+
+	order.ShippingAddressLine2 = shippingLine2.String
+	order.PaymentMethod = paymentMethod.String
+	order.StripePaymentIntent = stripeIntent.String
+	order.TrackingNumber = trackingNum.String
+	order.ShippingCarrier = carrier.String
+
+	// Get order items
+	order.Items, err = db.getOrderItems(order.ID)
+	if err != nil {
+		return order, err
+	}
+
+	return order, nil
+}
+
 // GetOrderByPaymentIntentID retrieves an order by payment intent ID
 func (db *DBConnection) GetOrderByPaymentIntentID(paymentIntentID string) (structs.Order, error) {
 	sqlQuery := `
@@ -1214,6 +1279,83 @@ func (db *DBConnection) CreateSMSSignup(countryCode, phone, email, source string
 	}
 
 	return result.LastInsertId()
+}
+
+// SetSMSVerificationCode sets a verification code for a phone number
+func (db *DBConnection) SetSMSVerificationCode(countryCode, phone, code string, expiresAt time.Time) error {
+	sqlQuery := `
+		INSERT INTO sms_signups (country_code, phone, verification_code, verification_expires_at, verified)
+		VALUES (?, ?, ?, ?, 0)
+		ON DUPLICATE KEY UPDATE
+			verification_code = VALUES(verification_code),
+			verification_expires_at = VALUES(verification_expires_at),
+			verified = 0
+	`
+
+	_, err := db.ExecuteQuery(sqlQuery, countryCode, phone, code, expiresAt)
+	return err
+}
+
+// VerifySMSCode verifies the code and marks the signup as verified
+func (db *DBConnection) VerifySMSCode(countryCode, phone, code string) (bool, error) {
+	sqlQuery := `
+		UPDATE sms_signups
+		SET verified = 1, verification_code = NULL, verification_expires_at = NULL
+		WHERE country_code = ? AND phone = ? AND verification_code = ?
+		AND verification_expires_at > NOW()
+	`
+
+	result, err := db.ExecuteQuery(sqlQuery, countryCode, phone, code)
+	if err != nil {
+		return false, err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+
+	return rowsAffected > 0, nil
+}
+
+// GetVerifiedSMSSignups retrieves all verified SMS signups
+func (db *DBConnection) GetVerifiedSMSSignups() ([]structs.SMSSignup, error) {
+	sqlQuery := `
+		SELECT id, COALESCE(country_code, '+1'), phone, COALESCE(email, ''), COALESCE(source, ''), created_at
+		FROM sms_signups
+		WHERE verified = 1
+		ORDER BY created_at DESC
+	`
+
+	rows, err := db.Database.Query(sqlQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var signups []structs.SMSSignup
+	for rows.Next() {
+		var s structs.SMSSignup
+		err := rows.Scan(&s.ID, &s.CountryCode, &s.Phone, &s.Email, &s.Source, &s.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		signups = append(signups, s)
+	}
+
+	return signups, nil
+}
+
+// UnsubscribeSMS marks a phone number as unsubscribed
+func (db *DBConnection) UnsubscribeSMS(countryCode, phone string) error {
+	sqlQuery := `
+		UPDATE sms_signups
+		SET unsubscribed = 1, updated_at = NOW()
+		WHERE country_code = ? AND phone = ?
+	`
+
+	_, err := db.Database.Exec(sqlQuery, countryCode, phone)
+	return err
 }
 
 // GetSMSSignups retrieves all SMS signups

@@ -1,10 +1,9 @@
 package session
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"net/http"
-	"time"
+
+	"github.com/murdinc/stencil2/utils"
 )
 
 const (
@@ -26,18 +25,10 @@ func GetOrCreateCartSession(r *http.Request, w http.ResponseWriter) string {
 	}
 
 	// Generate new cart ID
-	cartID := generateSessionID()
+	cartID := utils.GenerateSessionID()
 
 	// Set cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     CartCookieName,
-		Value:    cartID,
-		Path:     CartCookiePath,
-		MaxAge:   CartCookieMaxAge,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   false, // Set to true in production with HTTPS
-	})
+	utils.SetCookie(w, CartCookieName, cartID, CartCookiePath, CartCookieMaxAge)
 
 	return cartID
 }
@@ -53,37 +44,12 @@ func GetCartSession(r *http.Request) string {
 
 // ClearCartSession removes the cart session cookie
 func ClearCartSession(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     CartCookieName,
-		Value:    "",
-		Path:     CartCookiePath,
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
-}
-
-// generateSessionID generates a random session ID
-func generateSessionID() string {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		// Fallback to timestamp-based ID if random fails
-		return hex.EncodeToString([]byte(time.Now().String()))
-	}
-	return hex.EncodeToString(bytes)
+	utils.ClearCookie(w, CartCookieName, CartCookiePath)
 }
 
 // SetEarlyAccessSession sets the early access unlocked cookie
 func SetEarlyAccessSession(w http.ResponseWriter, value string) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     EarlyAccessCookieName,
-		Value:    value,
-		Path:     EarlyAccessCookiePath,
-		MaxAge:   EarlyAccessCookieMaxAge,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   false, // Set to true in production with HTTPS
-	})
+	utils.SetCookie(w, EarlyAccessCookieName, value, EarlyAccessCookiePath, EarlyAccessCookieMaxAge)
 }
 
 // GetEarlyAccessSession retrieves the early access session value if it exists

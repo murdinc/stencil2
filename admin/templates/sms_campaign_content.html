@@ -1,0 +1,191 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>SMS Campaign</h2>
+    <p>Send bulk SMS to verified subscribers</p>
+</div>
+
+{{if .Results}}
+<!-- Results Display -->
+<div class="card" style="margin-bottom: 20px;">
+    <h3 style="margin-bottom: 1rem;">Campaign Results</h3>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+        <div style="background: #f0fdf4; padding: 1rem; border-radius: 4px; border: 1px solid #86efac;">
+            <div style="font-size: 14px; color: #166534; margin-bottom: 0.25rem;">Sent Successfully</div>
+            <div style="font-size: 28px; font-weight: 700; color: #166534;">{{.SuccessCount}}</div>
+        </div>
+
+        {{if gt .FailureCount 0}}
+        <div style="background: #fef2f2; padding: 1rem; border-radius: 4px; border: 1px solid #fca5a5;">
+            <div style="font-size: 14px; color: #991b1b; margin-bottom: 0.25rem;">Failed</div>
+            <div style="font-size: 28px; font-weight: 700; color: #991b1b;">{{.FailureCount}}</div>
+        </div>
+        {{end}}
+
+        <div style="background: #f3f4f6; padding: 1rem; border-radius: 4px; border: 1px solid #d1d5db;">
+            <div style="font-size: 14px; color: #374151; margin-bottom: 0.25rem;">Total Recipients</div>
+            <div style="font-size: 28px; font-weight: 700; color: #374151;">{{.RecipientCount}}</div>
+        </div>
+    </div>
+
+    <div style="background: #f9fafb; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+        <strong>Message Sent:</strong>
+        <p style="margin-top: 0.5rem; white-space: pre-wrap;">{{.Message}}</p>
+    </div>
+
+    {{if gt .FailureCount 0}}
+    <details style="margin-top: 1rem;">
+        <summary style="cursor: pointer; font-weight: 600; padding: 0.5rem; background: #f9fafb; border-radius: 4px;">View Failed Sends</summary>
+        <div style="margin-top: 1rem; max-height: 300px; overflow-y: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Phone Number</th>
+                        <th>Error</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range $phone, $status := .Results}}
+                    {{if ne $status "success"}}
+                    <tr>
+                        <td>{{$phone}}</td>
+                        <td style="color: #991b1b;">{{$status}}</td>
+                    </tr>
+                    {{end}}
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </details>
+    {{end}}
+
+    <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #ddd;">
+        <a href="/site/{{.Website.ID}}/sms-campaigns" class="btn">Send Another Campaign</a>
+    </div>
+</div>
+{{else}}
+<!-- Campaign Form -->
+<div class="card" style="margin-bottom: 20px;">
+    <h3 style="margin-bottom: 1rem;">Select Recipients</h3>
+
+    <form method="GET" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+        <div>
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Country Code</label>
+            <select name="country_code" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="">All</option>
+                {{range .CountryCodes}}
+                <option value="{{.}}" {{if eq $.Filters.CountryCode .}}selected{{end}}>{{.}}</option>
+                {{end}}
+            </select>
+        </div>
+
+        <div>
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Source</label>
+            <select name="source" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="">All</option>
+                {{range .Sources}}
+                <option value="{{.}}" {{if eq $.Filters.Source .}}selected{{end}}>{{.}}</option>
+                {{end}}
+            </select>
+        </div>
+
+        <div>
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Date From</label>
+            <input type="date" name="date_from" value="{{.Filters.DateFrom}}" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+
+        <div>
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Date To</label>
+            <input type="date" name="date_to" value="{{.Filters.DateTo}}" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+
+        <div style="display: flex; align-items: flex-end; gap: 0.5rem;">
+            <button type="submit" class="btn" style="flex: 1;">Update Count</button>
+            <a href="/site/{{.Website.ID}}/sms-campaigns" class="btn" style="background: #666; flex: 1; text-align: center;">Clear</a>
+        </div>
+    </form>
+
+    <div style="padding: 1rem; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 4px;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <svg style="width: 20px; height: 20px; color: #1d4ed8;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <strong style="color: #1e40af;">{{.RecipientCount}} verified recipients</strong>
+            <span style="color: #1e40af;">will receive this message</span>
+        </div>
+    </div>
+</div>
+
+<form method="POST" action="/site/{{.Website.ID}}/sms-campaigns/send">
+    <!-- Hidden fields to preserve filters -->
+    <input type="hidden" name="country_code" value="{{.Filters.CountryCode}}">
+    <input type="hidden" name="source" value="{{.Filters.Source}}">
+    <input type="hidden" name="date_from" value="{{.Filters.DateFrom}}">
+    <input type="hidden" name="date_to" value="{{.Filters.DateTo}}">
+
+    <div class="card">
+        <h3 style="margin-bottom: 1rem;">Compose Message</h3>
+
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Message</label>
+            <textarea
+                name="message"
+                required
+                placeholder="Enter your message here..."
+                style="width: 100%; min-height: 150px; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; resize: vertical;"
+                maxlength="1600"
+                oninput="updateCharCount(this)"
+            ></textarea>
+            <div style="display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 14px; color: #666;">
+                <span id="charCount">0 / 1600 characters</span>
+                <span id="msgCount">1 message</span>
+            </div>
+            <div style="margin-top: 0.5rem; font-size: 14px; color: #666;">
+                💡 Tip: SMS messages are typically limited to 160 characters per segment. Longer messages will be split.
+            </div>
+            <div style="margin-top: 0.5rem; padding: 0.75rem; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 4px; font-size: 14px; color: #0c4a6e;">
+                ℹ️ "Reply STOP to unsubscribe" will be automatically added to the end of your message for compliance.
+            </div>
+        </div>
+
+        <div style="background: #fef3c7; border: 1px solid #fbbf24; padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem;">
+            <strong style="color: #92400e;">⚠️ Warning</strong>
+            <p style="color: #92400e; margin-top: 0.5rem; margin-bottom: 0;">
+                This will send an SMS to {{.RecipientCount}} verified recipients. This action cannot be undone and may incur charges.
+            </p>
+        </div>
+
+        <div style="display: flex; gap: 1rem;">
+            <button
+                type="submit"
+                class="btn"
+                style="background: #a52a2a; flex: 1;"
+                {{if eq .RecipientCount 0}}disabled{{end}}
+                onclick="return confirm('Are you sure you want to send this message to {{.RecipientCount}} recipients?')"
+            >
+                Send to {{.RecipientCount}} Recipients
+            </button>
+            <a href="/site/{{.Website.ID}}/sms-signups" class="btn" style="background: #666; flex: 1; text-align: center;">Cancel</a>
+        </div>
+    </div>
+</form>
+{{end}}
+
+<script>
+function updateCharCount(textarea) {
+    const length = textarea.value.length;
+    const charCount = document.getElementById('charCount');
+    const msgCount = document.getElementById('msgCount');
+
+    charCount.textContent = length + ' / 1600 characters';
+
+    // Calculate SMS segments (160 chars per segment, 153 for multi-part)
+    let segments = 1;
+    if (length > 160) {
+        segments = Math.ceil(length / 153);
+    }
+
+    msgCount.textContent = segments + ' message' + (segments > 1 ? 's' : '');
+}
+</script>
+{{end}}

@@ -179,6 +179,10 @@ type Order struct {
 	FulfillmentStatus    string      `json:"fulfillment_status"`
 	PaymentMethod        string      `json:"payment_method"`
 	StripePaymentIntent  string      `json:"stripe_payment_intent_id"`
+	ShippingLabelCost    float64     `json:"shipping_label_cost"`
+	TrackingNumber       string      `json:"tracking_number"`
+	ShippingCarrier      string      `json:"shipping_carrier"`
+	ShippingLabelURL     string      `json:"shipping_label_url"`
 	Items                []OrderItem `json:"items"`
 	CreatedAt            time.Time   `json:"created_at"`
 	UpdatedAt            time.Time   `json:"updated_at"`

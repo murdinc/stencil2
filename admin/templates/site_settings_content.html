@@ -103,20 +103,82 @@
     </div>
 
     <div class="card">
-        <h3>Email Settings</h3>
+        <h3>Twilio SMS Settings</h3>
+        <p style="color: #7f8c8d; margin-bottom: 16px;">Configure Twilio for SMS verification and bulk messaging.</p>
+
         <div class="form-group">
-            <label>From Address:</label>
-            <input type="email" name="emailFromAddress" value="{{.Website.EmailFromAddress}}" placeholder="noreply@example.com">
+            <label>Account SID:</label>
+            <input type="text" name="twilioAccountSid" value="{{.Website.TwilioAccountSID}}" placeholder="AC...">
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">Your Twilio Account SID</small>
+        </div>
+
+        <div class="form-group">
+            <label>Auth Token:</label>
+            <input type="password" name="twilioAuthToken" value="{{.Website.TwilioAuthToken}}" placeholder="Enter auth token">
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">Your Twilio Auth Token (kept secret)</small>
+        </div>
+
+        <div class="form-group">
+            <label>From Phone Number:</label>
+            <input type="text" name="twilioFromPhone" value="{{.Website.TwilioFromPhone}}" placeholder="+14155551234">
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">Your Twilio phone number in E.164 format (e.g., +14155551234)</small>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Email Settings</h3>
+        <p style="color: #7f8c8d; margin-bottom: 16px;">Configure email for sending and receiving messages. For Gmail, create an App Password in your Google Account settings.</p>
+
+        <div class="form-group">
+            <label>Email Address:</label>
+            <input type="email" name="emailAddress" value="{{.Website.EmailFromAddress}}" placeholder="support@example.com">
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">Used for sending, receiving, and reply-to</small>
         </div>
 
         <div class="form-group">
             <label>From Name:</label>
             <input type="text" name="emailFromName" value="{{.Website.EmailFromName}}" placeholder="Example Store">
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">Display name in sent emails</small>
         </div>
 
         <div class="form-group">
-            <label>Reply To:</label>
-            <input type="email" name="emailReplyTo" value="{{.Website.EmailReplyTo}}" placeholder="support@example.com">
+            <label>Email Password:</label>
+            <input type="password" name="emailPassword" value="{{.Website.IMAPPassword}}" placeholder="App password">
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">For Gmail, use an App Password (not your regular password)</small>
+        </div>
+
+        <h4 style="margin-top: 24px; margin-bottom: 8px; border-top: 1px solid #ddd; padding-top: 16px;">Server Settings</h4>
+        <p style="color: #7f8c8d; font-size: 13px; margin-bottom: 12px;">Gmail: imap.gmail.com:993 and smtp.gmail.com:587</p>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+                <label>IMAP Server (Incoming):</label>
+                <input type="text" name="imapServer" value="{{.Website.IMAPServer}}" placeholder="imap.gmail.com">
+            </div>
+
+            <div class="form-group">
+                <label>IMAP Port:</label>
+                <input type="number" name="imapPort" value="{{.Website.IMAPPort}}" placeholder="993">
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+                <label>SMTP Server (Outgoing):</label>
+                <input type="text" name="smtpServer" value="{{.Website.SMTPServer}}" placeholder="smtp.gmail.com">
+            </div>
+
+            <div class="form-group">
+                <label>SMTP Port:</label>
+                <input type="number" name="smtpPort" value="{{.Website.SMTPPort}}" placeholder="587">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="emailUseTLS" value="true" {{if .Website.IMAPUseTLS}}checked{{end}} style="width: auto; margin-right: 8px;">
+                Use TLS/SSL (recommended)
+            </label>
         </div>
     </div>
 
@@ -176,6 +238,34 @@
                 <label>Country:</label>
                 <input type="text" name="shipFromCountry" value="{{.Website.ShipFromCountry}}" placeholder="US">
             </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>SEO & Search Engines</h3>
+        <p style="color: #7f8c8d; margin-bottom: 16px;">Control how search engines crawl and index your site.</p>
+
+        <div class="form-group">
+            <label>robots.txt Content:</label>
+            <textarea name="robots_txt" rows="12" style="font-family: 'Monaco', 'Courier New', monospace; font-size: 13px;">{{.Website.RobotsTxt}}</textarea>
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">
+                Controls search engine crawling. Leave empty for sensible defaults.
+                <br>
+                <strong>Default:</strong> Allow all bots, link to sitemap at /sitemap.xml
+            </small>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Branding</h3>
+        <p style="color: #7f8c8d; margin-bottom: 16px;">Configure branding elements for documents and packing slips.</p>
+
+        <div class="form-group">
+            <label>Logo URL or Path:</label>
+            <input type="text" name="logo" value="{{.Website.Logo}}" placeholder="https://example.com/logo.png or /static/logo.png">
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">
+                Logo image for packing slips and printed documents. If not set, site name will be used instead.
+            </small>
         </div>
     </div>
 </form>

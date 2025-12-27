@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,7 +15,11 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/murdinc/stencil2/configs"
+	"github.com/murdinc/stencil2/database"
+	"github.com/murdinc/stencil2/email"
 	"github.com/murdinc/stencil2/frontend"
+	"github.com/murdinc/stencil2/twilio"
 )
 
 // Helper function to get website from URL parameter (db name)
@@ -126,10 +131,34 @@ func (s *AdminServer) handleSiteDashboard(w http.ResponseWriter, r *http.Request
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	s.renderWithLayout(w, r, "site_dashboard_content.html", map[string]interface{}{
-		"Title":         site.SiteName + " - Dashboard",
-		"ActiveSection": "",
+	// Get overview stats
+	stats, err := s.GetOverviewStats(websiteID)
+	if err != nil {
+		log.Printf("Error fetching overview stats: %v", err)
+		stats = &OverviewStats{} // Use empty stats on error
+	}
+
+	// Get active users count
+	activeUsers, err := s.GetActiveUsers(websiteID, 5)
+	if err != nil {
+		log.Printf("Error fetching active users: %v", err)
+		activeUsers = 0
+	}
+
+	// Get recent orders
+	recentOrders, err := s.GetRecentOrders(websiteID, 5)
+	if err != nil {
+		log.Printf("Error fetching recent orders: %v", err)
+		recentOrders = []RecentOrder{}
+	}
+
+	s.renderWithLayout(w, r, "overview_content.html", map[string]interface{}{
+		"Title":         site.SiteName + " - Overview",
+		"ActiveSection": "overview",
 		"Website":       site,
+		"Stats":         stats,
+		"ActiveUsers":   activeUsers,
+		"RecentOrders":  recentOrders,
 	})
 }
 
@@ -178,6 +207,18 @@ func (s *AdminServer) handleSiteSettingsUpdate(w http.ResponseWriter, r *http.Re
 		fmt.Sscanf(r.FormValue("shippingCost"), "%f", &shippingCost)
 	}
 
+	// Parse IMAP port
+	imapPort := 0
+	if r.FormValue("imapPort") != "" {
+		fmt.Sscanf(r.FormValue("imapPort"), "%d", &imapPort)
+	}
+
+	// Parse SMTP port
+	smtpPort := 0
+	if r.FormValue("smtpPort") != "" {
+		fmt.Sscanf(r.FormValue("smtpPort"), "%d", &smtpPort)
+	}
+
 	website := Website{
 		ID:            websiteID,
 		SiteName:      r.FormValue("siteName"),
@@ -193,9 +234,26 @@ func (s *AdminServer) handleSiteSettingsUpdate(w http.ResponseWriter, r *http.Re
 		ShippoAPIKey: r.FormValue("shippoApiKey"),
 		LabelFormat:  r.FormValue("labelFormat"),
 
-		EmailFromAddress: r.FormValue("emailFromAddress"),
+		TwilioAccountSID: r.FormValue("twilioAccountSid"),
+		TwilioAuthToken:  r.FormValue("twilioAuthToken"),
+		TwilioFromPhone:  r.FormValue("twilioFromPhone"),
+
+		// Simplified email fields - use single email address for all
+		EmailFromAddress: r.FormValue("emailAddress"),
 		EmailFromName:    r.FormValue("emailFromName"),
-		EmailReplyTo:     r.FormValue("emailReplyTo"),
+		EmailReplyTo:     r.FormValue("emailAddress"), // Same as from address
+
+		IMAPServer:   r.FormValue("imapServer"),
+		IMAPPort:     imapPort,
+		IMAPUsername: r.FormValue("emailAddress"), // Same as email address
+		IMAPPassword: r.FormValue("emailPassword"),
+		IMAPUseTLS:   r.FormValue("emailUseTLS") == "true",
+
+		SMTPServer:   r.FormValue("smtpServer"),
+		SMTPPort:     smtpPort,
+		SMTPUsername: r.FormValue("emailAddress"), // Same as email address
+		SMTPPassword: r.FormValue("emailPassword"), // Same as IMAP password
+		SMTPUseTLS:   r.FormValue("emailUseTLS") == "true",
 
 		TaxRate:      taxRate,
 		ShippingCost: shippingCost,
@@ -210,6 +268,9 @@ func (s *AdminServer) handleSiteSettingsUpdate(w http.ResponseWriter, r *http.Re
 		ShipFromState:   r.FormValue("shipFromState"),
 		ShipFromZip:     r.FormValue("shipFromZip"),
 		ShipFromCountry: r.FormValue("shipFromCountry"),
+
+		RobotsTxt: r.FormValue("robots_txt"),
+		Logo:      r.FormValue("logo"),
 	}
 
 	if err := s.UpdateWebsite(website); err != nil {
@@ -227,6 +288,35 @@ func (s *AdminServer) handleSiteSettingsUpdate(w http.ResponseWriter, r *http.Re
 	s.LogActivity("update", "website", 0, websiteID, website)
 
 	http.Redirect(w, r, fmt.Sprintf("/site/%s/settings", websiteID), http.StatusSeeOther)
+}
+
+// handleWebhooks renders the webhooks configuration page
+func (s *AdminServer) handleWebhooks(w http.ResponseWriter, r *http.Request) {
+	siteID := chi.URLParam(r, "id")
+
+	site, err := s.GetWebsite(siteID)
+	if err != nil {
+		http.Error(w, "Site not found", http.StatusNotFound)
+		return
+	}
+
+	// Construct base URL for webhooks
+	baseURL := s.EnvConfig.BaseURL
+	if baseURL == "" {
+		// Fallback to request host if base URL not configured
+		scheme := "https"
+		if !s.EnvConfig.ProdMode {
+			scheme = "http"
+		}
+		baseURL = fmt.Sprintf("%s://%s", scheme, r.Host)
+	}
+
+	s.renderWithLayout(w, r, "webhooks_content.html", map[string]interface{}{
+		"Title":         site.SiteName + " - Webhooks",
+		"ActiveSection": "webhooks",
+		"Website":       site,
+		"BaseURL":       baseURL,
+	})
 }
 
 // handleWebsitesList renders the websites list
@@ -1623,6 +1713,46 @@ func (s *AdminServer) handleOrderDetail(w http.ResponseWriter, r *http.Request) 
 	s.renderWithLayout(w, r, "order_detail_content.html", data)
 }
 
+// handlePackingSlip renders the packing slip for an order
+func (s *AdminServer) handlePackingSlip(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	orderIDStr := chi.URLParam(r, "orderId")
+	orderID, err := strconv.Atoi(orderIDStr)
+	if err != nil {
+		http.Error(w, "Invalid order ID", http.StatusBadRequest)
+		return
+	}
+
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	order, err := s.GetOrder(websiteID, orderID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error fetching order: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]interface{}{
+		"Website": website,
+		"Order":   order,
+	}
+
+	// Render packing slip template without layout (for printing)
+	tmpl, err := template.ParseFiles("admin/templates/packing_slip.html")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error loading template: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	if err := tmpl.Execute(w, data); err != nil {
+		http.Error(w, fmt.Sprintf("Error rendering template: %v", err), http.StatusInternalServerError)
+	}
+}
+
 // handleOrderFulfillmentUpdate updates the fulfillment status of an order
 func (s *AdminServer) handleOrderFulfillmentUpdate(w http.ResponseWriter, r *http.Request) {
 	websiteID := chi.URLParam(r, "id")
@@ -1661,6 +1791,40 @@ func (s *AdminServer) handleOrderFulfillmentUpdate(w http.ResponseWriter, r *htt
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error updating fulfillment status: %v", err), http.StatusInternalServerError)
 		return
+	}
+
+	// Send shipping confirmation email if status changed to "shipped" and we have tracking info
+	if fulfillmentStatus == "shipped" && order.TrackingNumber != "" && order.ShippingCarrier != "" {
+		emailService, err := email.NewEmailService(s.EnvConfig)
+		if err == nil {
+			// Get website to build config
+			website, err := s.GetWebsite(websiteID)
+			if err == nil {
+				websiteConfig := &configs.WebsiteConfig{
+					SiteName: website.SiteName,
+				}
+				websiteConfig.Email.FromAddress = website.EmailFromAddress
+				websiteConfig.Email.FromName = website.EmailFromName
+				websiteConfig.Email.ReplyTo = website.EmailReplyTo
+
+				err = emailService.SendShippingConfirmation(
+					websiteConfig,
+					order.OrderNumber,
+					order.CustomerEmail,
+					order.CustomerName,
+					order.TrackingNumber,
+					order.ShippingCarrier,
+				)
+				if err != nil {
+					log.Printf("Failed to send shipping confirmation email: %v", err)
+					// Continue even if email fails
+				}
+			} else {
+				log.Printf("Failed to get website config: %v", err)
+			}
+		} else {
+			log.Printf("Failed to create email service: %v", err)
+		}
 	}
 
 	// Redirect back to order detail page
@@ -1815,6 +1979,46 @@ func (s *AdminServer) handleShippingLabelPurchase(w http.ResponseWriter, r *http
 			"error":   fmt.Sprintf("Error purchasing label: %v", err),
 		})
 		return
+	}
+
+	// Automatically update order status to "shipped" since we just bought a label
+	err = s.UpdateOrderFulfillmentStatus(websiteID, orderID, "shipped")
+	if err != nil {
+		log.Printf("Warning: Failed to update order status to shipped: %v", err)
+		// Continue anyway - label was purchased successfully
+	}
+
+	// Send shipping confirmation email to customer
+	emailService, err := email.NewEmailService(s.EnvConfig)
+	if err == nil {
+		website, err := s.GetWebsite(websiteID)
+		if err == nil {
+			websiteConfig := &configs.WebsiteConfig{
+				SiteName: website.SiteName,
+			}
+			websiteConfig.Email.FromAddress = website.EmailFromAddress
+			websiteConfig.Email.FromName = website.EmailFromName
+			websiteConfig.Email.ReplyTo = website.EmailReplyTo
+
+			err = emailService.SendShippingConfirmation(
+				websiteConfig,
+				order.OrderNumber,
+				order.CustomerEmail,
+				order.CustomerName,
+				labelInfo.TrackingNumber,
+				labelInfo.Carrier,
+			)
+			if err != nil {
+				log.Printf("Warning: Failed to send shipping confirmation email: %v", err)
+				// Continue anyway - label was purchased successfully
+			} else {
+				log.Printf("Sent shipping confirmation email for order %s", order.OrderNumber)
+			}
+		} else {
+			log.Printf("Warning: Failed to get website config: %v", err)
+		}
+	} else {
+		log.Printf("Warning: Failed to create email service: %v", err)
 	}
 
 	// Return success with label info
@@ -2039,6 +2243,366 @@ func (s *AdminServer) handleExportSMSSignups(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// handleSMSCampaignForm displays the bulk SMS campaign form
+func (s *AdminServer) handleSMSCampaignForm(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+
+	// Get website
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, "Website not found", http.StatusNotFound)
+		return
+	}
+
+	// Parse filter parameters from query string
+	filters := SMSSignupFilters{
+		CountryCode: r.URL.Query().Get("country_code"),
+		Source:      r.URL.Query().Get("source"),
+		DateFrom:    r.URL.Query().Get("date_from"),
+		DateTo:      r.URL.Query().Get("date_to"),
+		Sort:        r.URL.Query().Get("sort"),
+	}
+
+	// Default sort
+	if filters.Sort == "" {
+		filters.Sort = "date_desc"
+	}
+
+	// Get verified SMS signups with filters to show count
+	signups, err := s.GetVerifiedSMSSignups(websiteID, filters)
+	if err != nil {
+		http.Error(w, "Failed to load verified SMS signups", http.StatusInternalServerError)
+		return
+	}
+
+	// Get unique country codes and sources for filter dropdowns
+	countryCodes, _ := s.GetUniqueCountryCodes(websiteID)
+	sources, _ := s.GetUniqueSources(websiteID)
+
+	allSites, _ := s.GetAllWebsites()
+
+	data := map[string]interface{}{
+		"Title":          "SMS Campaign",
+		"Website":        website,
+		"RecipientCount": len(signups),
+		"ActiveSection":  "sms-campaigns",
+		"AllSites":       allSites,
+		"CurrentSite":    website,
+		"Filters":        filters,
+		"CountryCodes":   countryCodes,
+		"Sources":        sources,
+	}
+
+	s.renderWithLayout(w, r, "sms_campaign_content.html", data)
+}
+
+// handleSendBulkSMS processes the bulk SMS send request
+func (s *AdminServer) handleSendBulkSMS(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+
+	// Get website
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, "Website not found", http.StatusNotFound)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse form data
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	// Get message from form
+	message := r.FormValue("message")
+	if message == "" {
+		http.Error(w, "Message is required", http.StatusBadRequest)
+		return
+	}
+
+	// Parse filter parameters
+	filters := SMSSignupFilters{
+		CountryCode: r.FormValue("country_code"),
+		Source:      r.FormValue("source"),
+		DateFrom:    r.FormValue("date_from"),
+		DateTo:      r.FormValue("date_to"),
+	}
+
+	// Get verified SMS signups with filters
+	signups, err := s.GetVerifiedSMSSignups(websiteID, filters)
+	if err != nil {
+		http.Error(w, "Failed to load verified SMS signups", http.StatusInternalServerError)
+		return
+	}
+
+	if len(signups) == 0 {
+		http.Error(w, "No verified recipients found with the selected filters", http.StatusBadRequest)
+		return
+	}
+
+	// Load website config to get Twilio credentials
+	configPath := filepath.Join("websites", website.Directory, "config-dev.json")
+	if s.EnvConfig.ProdMode {
+		configPath = filepath.Join("websites", website.Directory, "config-prod.json")
+	}
+
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		http.Error(w, "Failed to read website config", http.StatusInternalServerError)
+		return
+	}
+
+	var siteConfig struct {
+		Twilio struct {
+			AccountSID string `json:"accountSid"`
+			AuthToken  string `json:"authToken"`
+			FromPhone  string `json:"fromPhone"`
+		} `json:"twilio"`
+	}
+
+	if err := json.Unmarshal(configData, &siteConfig); err != nil {
+		http.Error(w, "Failed to parse website config", http.StatusInternalServerError)
+		return
+	}
+
+	// Initialize Twilio client
+	twilioClient := twilio.NewClient(
+		siteConfig.Twilio.AccountSID,
+		siteConfig.Twilio.AuthToken,
+		siteConfig.Twilio.FromPhone,
+	)
+
+	// Build phone numbers list with E.164 formatting
+	var phoneNumbers []string
+	for _, signup := range signups {
+		// Format phone: country code + phone number
+		formattedPhone := twilio.FormatPhoneNumber(signup.CountryCode, signup.Phone)
+		phoneNumbers = append(phoneNumbers, formattedPhone)
+	}
+
+	// Add opt-out message for compliance
+	messageWithOptOut := message + "\n\nReply STOP to unsubscribe"
+
+	// Send bulk SMS
+	results, err := twilioClient.SendBulkSMS(phoneNumbers, messageWithOptOut)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to send bulk SMS: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Count successes and failures
+	successCount := 0
+	failureCount := 0
+	for _, status := range results {
+		if status == "success" {
+			successCount++
+		} else {
+			failureCount++
+		}
+	}
+
+	// Get unique country codes and sources for filter dropdowns
+	countryCodes, _ := s.GetUniqueCountryCodes(websiteID)
+	sources, _ := s.GetUniqueSources(websiteID)
+
+	allSites, _ := s.GetAllWebsites()
+
+	// Render results page
+	data := map[string]interface{}{
+		"Title":          "SMS Campaign Results",
+		"Website":        website,
+		"Message":        message,
+		"RecipientCount": len(signups),
+		"SuccessCount":   successCount,
+		"FailureCount":   failureCount,
+		"Results":        results,
+		"ActiveSection":  "sms-campaigns",
+		"AllSites":       allSites,
+		"CurrentSite":    website,
+		"Filters":        filters,
+		"CountryCodes":   countryCodes,
+		"Sources":        sources,
+	}
+
+	s.renderWithLayout(w, r, "sms_campaign_content.html", data)
+}
+
+// ===============================
+// Analytics
+// ===============================
+
+func (s *AdminServer) handleAnalytics(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Parse date range from query params (default to last 30 days)
+	daysParam := r.URL.Query().Get("days")
+	days := 30
+	if daysParam != "" {
+		if d, err := strconv.Atoi(daysParam); err == nil && d > 0 {
+			days = d
+		}
+	}
+
+	endDate := time.Now()
+	startDate := endDate.AddDate(0, 0, -days)
+
+	// Get analytics data
+	stats, err := s.GetPageViewStats(websiteID, startDate, endDate)
+	if err != nil {
+		log.Printf("Error fetching analytics stats: %v", err)
+		stats = make(map[string]interface{})
+	}
+
+	topPages, err := s.GetTopPages(websiteID, startDate, endDate, 20)
+	if err != nil {
+		log.Printf("Error fetching top pages: %v", err)
+		topPages = []map[string]interface{}{}
+	}
+
+	topReferrers, err := s.GetTopReferrers(websiteID, startDate, endDate, 20)
+	if err != nil {
+		log.Printf("Error fetching top referrers: %v", err)
+		topReferrers = []map[string]interface{}{}
+	}
+
+	eventStats, err := s.GetEventStats(websiteID, startDate, endDate, 20)
+	if err != nil {
+		log.Printf("Error fetching event stats: %v", err)
+		eventStats = []map[string]interface{}{}
+	}
+
+	// Calculate average pages per visitor
+	avgPages := 0.0
+	if totalViews, ok := stats["total_views"].(int64); ok {
+		if uniqueSessions, ok := stats["unique_sessions"].(int64); ok && uniqueSessions > 0 {
+			avgPages = float64(totalViews) / float64(uniqueSessions)
+		}
+	}
+
+	// Get real-time metrics (active in last 5 minutes)
+	activeUsers, err := s.GetActiveUsers(websiteID, 5)
+	if err != nil {
+		log.Printf("Error fetching active users: %v", err)
+		activeUsers = 0
+	}
+
+	currentPages, err := s.GetCurrentPages(websiteID, 5)
+	if err != nil {
+		log.Printf("Error fetching current pages: %v", err)
+		currentPages = []map[string]interface{}{}
+	}
+
+	// Get engagement metrics
+	bounceRate, err := s.GetBounceRate(websiteID, startDate, endDate)
+	if err != nil {
+		log.Printf("Error fetching bounce rate: %v", err)
+		bounceRate = 0
+	}
+
+	avgSessionDuration, err := s.GetAverageSessionDuration(websiteID, startDate, endDate)
+	if err != nil {
+		log.Printf("Error fetching avg session duration: %v", err)
+		avgSessionDuration = 0
+	}
+
+	// Format session duration for display
+	var sessionDurationDisplay string
+	if avgSessionDuration >= 60 {
+		sessionDurationDisplay = fmt.Sprintf("%.0fm", avgSessionDuration/60)
+	} else {
+		sessionDurationDisplay = fmt.Sprintf("%.0fs", avgSessionDuration)
+	}
+
+	deviceBreakdown, err := s.GetDeviceBreakdown(websiteID, startDate, endDate)
+	if err != nil {
+		log.Printf("Error fetching device breakdown: %v", err)
+		deviceBreakdown = make(map[string]int)
+	}
+
+	entryPages, err := s.GetEntryPages(websiteID, startDate, endDate, 10)
+	if err != nil {
+		log.Printf("Error fetching entry pages: %v", err)
+		entryPages = []map[string]interface{}{}
+	}
+
+	exitPages, err := s.GetExitPages(websiteID, startDate, endDate, 10)
+	if err != nil {
+		log.Printf("Error fetching exit pages: %v", err)
+		exitPages = []map[string]interface{}{}
+	}
+
+	// Get e-commerce metrics
+	conversionRate, convertedSessions, totalSessions, err := s.GetConversionRate(websiteID, startDate, endDate)
+	if err != nil {
+		log.Printf("Error fetching conversion rate: %v", err)
+		conversionRate, convertedSessions, totalSessions = 0, 0, 0
+	}
+
+	abandonmentRate, abandonedCarts, totalCarts, err := s.GetCartAbandonmentRate(websiteID, startDate, endDate)
+	if err != nil {
+		log.Printf("Error fetching cart abandonment: %v", err)
+		abandonmentRate, abandonedCarts, totalCarts = 0, 0, 0
+	}
+
+	revenueMetrics, err := s.GetRevenueMetrics(websiteID, startDate, endDate)
+	if err != nil {
+		log.Printf("Error fetching revenue metrics: %v", err)
+		revenueMetrics = make(map[string]interface{})
+	}
+
+	// Check if there are any orders for conditional display
+	hasOrders := false
+	if totalOrders, ok := revenueMetrics["total_orders"].(int); ok && totalOrders > 0 {
+		hasOrders = true
+	}
+
+	allSites, _ := s.GetAllWebsites()
+
+	data := map[string]interface{}{
+		"Title":                   "Analytics",
+		"Website":                 website,
+		"AllSites":                allSites,
+		"CurrentSite":             website,
+		"ActiveSection":           "analytics",
+		"Days":                    days,
+		"StartDate":               startDate.Format("2006-01-02"),
+		"EndDate":                 endDate.Format("2006-01-02"),
+		"Stats":                   stats,
+		"AvgPages":                avgPages,
+		"TopPages":                topPages,
+		"TopReferrers":            topReferrers,
+		"EventStats":              eventStats,
+		"ActiveUsers":             activeUsers,
+		"CurrentPages":            currentPages,
+		"BounceRate":              bounceRate,
+		"AvgSessionDuration":      avgSessionDuration,
+		"SessionDurationDisplay":  sessionDurationDisplay,
+		"DeviceBreakdown":         deviceBreakdown,
+		"EntryPages":              entryPages,
+		"ExitPages":               exitPages,
+		"ConversionRate":          conversionRate,
+		"ConvertedSessions":       convertedSessions,
+		"TotalSessions":           totalSessions,
+		"AbandonmentRate":         abandonmentRate,
+		"AbandonedCarts":          abandonedCarts,
+		"TotalCarts":              totalCarts,
+		"RevenueMetrics":          revenueMetrics,
+		"HasOrders":               hasOrders,
+	}
+
+	s.renderWithLayout(w, r, "analytics_content.html", data)
+}
+
 // renderTemplate renders a template with data
 func (s *AdminServer) renderTemplate(w http.ResponseWriter, tmpl string, data interface{}) {
 	tmplPath := filepath.Join("admin", "templates", tmpl+".html")
@@ -2054,4 +2618,273 @@ func (s *AdminServer) renderTemplate(w http.ResponseWriter, tmpl string, data in
 	if err := t.Execute(w, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// handleMessagesList renders the messages inbox
+func (s *AdminServer) handleMessagesList(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, "Website not found", http.StatusNotFound)
+		return
+	}
+
+	messages, err := s.GetMessages(websiteID)
+	if err != nil {
+		log.Printf("Error fetching messages: %v", err)
+		messages = []Message{}
+	}
+
+	data := map[string]interface{}{
+		"Title":         "Messages",
+		"Website":       website,
+		"Messages":      messages,
+		"ActiveSection": "messages",
+	}
+
+	s.renderWithLayout(w, r, "messages_list_content.html", data)
+}
+
+// handleMessageDetail renders a single message with replies
+func (s *AdminServer) handleMessageDetail(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	messageIDStr := chi.URLParam(r, "messageId")
+
+	messageID, err := strconv.Atoi(messageIDStr)
+	if err != nil {
+		http.Error(w, "Invalid message ID", http.StatusBadRequest)
+		return
+	}
+
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, "Website not found", http.StatusNotFound)
+		return
+	}
+
+	message, err := s.GetMessage(websiteID, messageID)
+	if err != nil {
+		http.Error(w, "Message not found", http.StatusNotFound)
+		return
+	}
+
+	// Mark as read when viewing
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err == nil {
+		dbConn := &database.DBConnection{Database: db, Connected: true}
+		dbConn.MarkMessageAsRead(messageID)
+		db.Close()
+		// Update the message status in memory to reflect the change
+		message.Status = "read"
+	}
+
+	// Look up customer by email if exists
+	customer, err := s.GetCustomerByEmail(websiteID, message.Email)
+	if err != nil {
+		log.Printf("Error looking up customer by email: %v", err)
+	}
+
+	// Get status from query parameters (for reply feedback)
+	status := r.URL.Query().Get("status")
+	errorMsg := r.URL.Query().Get("error")
+	preservedReply := r.URL.Query().Get("reply_text")
+
+	data := map[string]interface{}{
+		"Title":         "Message from " + message.Name,
+		"Website":       website,
+		"Message":       message,
+		"Customer":      customer,
+		"ActiveSection": "messages",
+		"ReplyStatus":   status,
+		"ReplyError":    errorMsg,
+		"PreservedReply": preservedReply,
+	}
+
+	s.renderWithLayout(w, r, "message_detail_content.html", data)
+}
+
+// handleMessageReply handles reply submission and sends email
+func (s *AdminServer) handleMessageReply(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	messageIDStr := chi.URLParam(r, "messageId")
+
+	messageID, err := strconv.Atoi(messageIDStr)
+	if err != nil {
+		http.Error(w, "Invalid message ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	replyText := r.FormValue("reply_text")
+	if replyText == "" {
+		http.Error(w, "Reply text is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get the original message
+	message, err := s.GetMessage(websiteID, messageID)
+	if err != nil {
+		http.Error(w, "Message not found", http.StatusNotFound)
+		return
+	}
+
+	// Send email to customer FIRST
+	website, _ := s.GetWebsite(websiteID)
+	err = s.SendReplyEmail(&website, message, replyText)
+
+	redirectURL := fmt.Sprintf("/site/%s/messages/%d", websiteID, messageID)
+	if err != nil {
+		// Email failed - don't save reply, preserve text for retry
+		log.Printf("Failed to send email: %v", err)
+		redirectURL += "?status=error&error=" + url.QueryEscape(err.Error()) + "&reply_text=" + url.QueryEscape(replyText)
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+
+	// Email sent successfully - now save reply to database
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	dbConn := &database.DBConnection{Database: db, Connected: true}
+	err = dbConn.CreateReply(messageID, replyText, "admin")
+	if err != nil {
+		log.Printf("Error saving reply: %v", err)
+		http.Error(w, "Failed to save reply", http.StatusInternalServerError)
+		return
+	}
+
+	// Both emailed and saved successfully
+	redirectURL += "?status=success"
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+// handleMessageToggleRead toggles message read status
+func (s *AdminServer) handleMessageToggleRead(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	messageIDStr := chi.URLParam(r, "messageId")
+
+	messageID, err := strconv.Atoi(messageIDStr)
+	if err != nil {
+		http.Error(w, "Invalid message ID", http.StatusBadRequest)
+		return
+	}
+
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	// Get current status
+	message, err := s.GetMessage(websiteID, messageID)
+	if err != nil {
+		http.Error(w, "Message not found", http.StatusNotFound)
+		return
+	}
+
+	dbConn := &database.DBConnection{Database: db, Connected: true}
+	var redirectToList bool
+	if message.Status == "read" {
+		err = dbConn.MarkMessageAsUnread(messageID)
+		redirectToList = true // Mark as unread goes back to list
+	} else {
+		err = dbConn.MarkMessageAsRead(messageID)
+		redirectToList = false // Mark as read stays on detail page
+	}
+
+	if err != nil {
+		http.Error(w, "Failed to update status", http.StatusInternalServerError)
+		return
+	}
+
+	// Redirect appropriately
+	if redirectToList {
+		http.Redirect(w, r, fmt.Sprintf("/site/%s/messages", websiteID), http.StatusSeeOther)
+	} else {
+		http.Redirect(w, r, fmt.Sprintf("/site/%s/messages/%d", websiteID, messageID), http.StatusSeeOther)
+	}
+}
+
+// handleMessageDelete deletes a message and its replies
+func (s *AdminServer) handleMessageDelete(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	messageIDStr := chi.URLParam(r, "messageId")
+
+	messageID, err := strconv.Atoi(messageIDStr)
+	if err != nil {
+		http.Error(w, "Invalid message ID", http.StatusBadRequest)
+		return
+	}
+
+	err = s.DeleteMessage(websiteID, messageID)
+	if err != nil {
+		log.Printf("Error deleting message: %v", err)
+		http.Error(w, "Failed to delete message", http.StatusInternalServerError)
+		return
+	}
+
+	// Redirect back to messages list
+	http.Redirect(w, r, fmt.Sprintf("/site/%s/messages", websiteID), http.StatusSeeOther)
+}
+
+// SendReplyEmail sends an email reply to the customer using SMTP
+func (s *AdminServer) SendReplyEmail(website *Website, message *MessageWithReplies, replyText string) error {
+	// Check if SMTP is configured
+	if website.SMTPServer == "" || website.SMTPPort == 0 {
+		return fmt.Errorf("SMTP not configured for this website")
+	}
+
+	// Build SMTP config
+	smtpConfig := email.SMTPConfig{
+		Server:   website.SMTPServer,
+		Port:     website.SMTPPort,
+		Username: website.SMTPUsername,
+		Password: website.SMTPPassword,
+		UseTLS:   website.SMTPUseTLS,
+	}
+
+	// Use configured from address or fall back to username
+	fromAddress := website.EmailFromAddress
+	if fromAddress == "" {
+		fromAddress = website.SMTPUsername
+	}
+
+	fromName := website.EmailFromName
+	if fromName == "" {
+		fromName = website.SiteName
+	}
+
+	// For proper threading, we need the original message's Message-ID
+	// Since contact form messages don't have a Message-ID initially,
+	// we'll just send a simple reply for now
+	// The IMAP polling will handle incoming threaded replies
+
+	subject := "Re: Message from " + website.SiteName
+
+	outgoingEmail := email.OutgoingEmail{
+		From:     fromAddress,
+		FromName: fromName,
+		To:       message.Email,
+		Subject:  subject,
+		Body:     fmt.Sprintf("Hi %s,\n\n%s\n\nBest regards,\n%s", message.Name, replyText, fromName),
+		ReplyTo:  fromAddress,
+	}
+
+	err := email.SendEmail(smtpConfig, outgoingEmail)
+	if err != nil {
+		return fmt.Errorf("failed to send email: %v", err)
+	}
+
+	log.Printf("Email sent successfully to %s (%s)", message.Email, message.Name)
+	return nil
 }
