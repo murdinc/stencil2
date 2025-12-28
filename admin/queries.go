@@ -3627,11 +3627,11 @@ type OverviewStats struct {
 	UniqueVisitorsToday int
 
 	// E-commerce Stats
-	TotalProducts   int
-	ActiveProducts  int
-	TotalOrders     int
-	TotalRevenue    float64
-	TotalCustomers  int
+	TotalProducts    int
+	RepeatCustomers  int
+	TotalOrders      int
+	TotalRevenue     float64
+	TotalCustomers   int
 
 	// Recent Activity
 	OrdersToday     int
@@ -3674,24 +3674,34 @@ func (s *AdminServer) GetOverviewStats(websiteID string) (*OverviewStats, error)
 	}
 
 	// E-commerce Stats - Products
-	err = db.QueryRow(`
-		SELECT
-			COUNT(*) as total,
-			SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active
-		FROM products_unified
-	`).Scan(&stats.TotalProducts, &stats.ActiveProducts)
+	err = db.QueryRow(`SELECT COUNT(*) FROM products_unified`).Scan(&stats.TotalProducts)
 	if err != nil && err != sql.ErrNoRows {
 		stats.TotalProducts = 0
-		stats.ActiveProducts = 0
 	}
 
-	// E-commerce Stats - Orders
+	// E-commerce Stats - Repeat Customers (customers with 2+ paid orders)
+	err = db.QueryRow(`
+		SELECT COUNT(*)
+		FROM customers c
+		WHERE (
+			SELECT COUNT(*)
+			FROM orders o
+			WHERE o.customer_id = c.id
+			AND o.payment_status = 'paid'
+		) >= 2
+	`).Scan(&stats.RepeatCustomers)
+	if err != nil && err != sql.ErrNoRows {
+		stats.RepeatCustomers = 0
+	}
+
+	// E-commerce Stats - Orders (only paid orders)
 	var totalRevenue sql.NullFloat64
 	err = db.QueryRow(`
 		SELECT
 			COUNT(*) as total_orders,
-			COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as total_revenue
+			COALESCE(SUM(total), 0) as total_revenue
 		FROM orders
+		WHERE payment_status = 'paid'
 	`).Scan(&stats.TotalOrders, &totalRevenue)
 	if err != nil && err != sql.ErrNoRows {
 		stats.TotalOrders = 0
