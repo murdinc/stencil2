@@ -557,6 +557,10 @@ func defaultOffsetCount(vars map[string]string) (int, int) {
 	if err != nil || count <= 0 {
 		count = 30
 	}
+	// Enforce maximum to prevent memory exhaustion
+	if count > 100 {
+		count = 100
+	}
 
 	if offset < 0 {
 		offset = 0

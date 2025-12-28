@@ -31,7 +31,9 @@ func (db *DBConnection) InitAnalyticsTables() error {
 			INDEX idx_path (path(255)),
 			INDEX idx_created_at (created_at),
 			INDEX idx_visitor_created (visitor_id, created_at),
-			INDEX idx_session_created (session_id, created_at)
+			INDEX idx_session_created (session_id, created_at),
+			INDEX idx_pageviews_date_visitor (created_at, visitor_id),
+			INDEX idx_pageviews_date_session (created_at, session_id)
 		)`,
 
 		// Analytics - Custom Events
@@ -51,34 +53,11 @@ func (db *DBConnection) InitAnalyticsTables() error {
 		)`,
 	}
 
-	// Run migrations for existing tables
-	migrations := []string{
-		// Add visitor_id to analytics_pageviews if it doesn't exist
-		`ALTER TABLE analytics_pageviews
-		 ADD COLUMN IF NOT EXISTS visitor_id VARCHAR(36) NOT NULL DEFAULT '' AFTER id,
-		 ADD INDEX IF NOT EXISTS idx_visitor_id (visitor_id),
-		 ADD INDEX IF NOT EXISTS idx_visitor_created (visitor_id, created_at)`,
-
-		// Add visitor_id to analytics_events if it doesn't exist
-		`ALTER TABLE analytics_events
-		 ADD COLUMN IF NOT EXISTS visitor_id VARCHAR(36) NOT NULL DEFAULT '' AFTER id,
-		 ADD INDEX IF NOT EXISTS idx_visitor_id (visitor_id)`,
-
-		// Add time_on_page to analytics_pageviews if it doesn't exist
-		`ALTER TABLE analytics_pageviews
-		 ADD COLUMN IF NOT EXISTS time_on_page INT DEFAULT 0 AFTER created_at`,
-	}
-
 	for _, schema := range schemas {
 		_, err := db.Database.Exec(schema)
 		if err != nil {
 			return fmt.Errorf("failed to create analytics table: %v", err)
 		}
-	}
-
-	// Run migrations (ignore errors for existing columns)
-	for _, migration := range migrations {
-		db.Database.Exec(migration)
 	}
 
 	return nil

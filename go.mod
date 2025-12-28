@@ -1,6 +1,8 @@
 module github.com/murdinc/stencil2
 
-go 1.20
+go 1.24.0
+
+toolchain go1.24.11
 
 require (
 	github.com/Masterminds/sprig v2.22.0+incompatible
@@ -24,6 +26,9 @@ require (
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21 // indirect
 	github.com/google/uuid v1.3.0 // indirect
+	github.com/gorilla/csrf v1.7.3 // indirect
+	github.com/gorilla/securecookie v1.1.2 // indirect
+	github.com/gorilla/sessions v1.4.0 // indirect
 	github.com/huandu/xstrings v1.4.0 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
@@ -33,5 +38,7 @@ require (
 	github.com/stretchr/testify v1.8.3 // indirect
 	github.com/tdewolff/parse/v2 v2.6.6 // indirect
 	golang.org/x/crypto v0.12.0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/term v0.38.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 )

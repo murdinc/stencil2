@@ -29,6 +29,11 @@ func (dbConn *DBConnection) Connect(username, password, host, port, dbName strin
 		return err
 	}
 
+	// Configure connection pool
+	dbConn.Database.SetMaxOpenConns(25)
+	dbConn.Database.SetMaxIdleConns(5)
+	dbConn.Database.SetConnMaxLifetime(5 * time.Minute)
+
 	startTime := time.Now()
 	for {
 		err = dbConn.Database.Ping()

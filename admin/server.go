@@ -7,25 +7,53 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/gorilla/csrf"
+	"github.com/gorilla/sessions"
 	"github.com/murdinc/stencil2/configs"
 	"github.com/murdinc/stencil2/database"
 	"github.com/murdinc/stencil2/email"
 )
 
 type AdminServer struct {
-	Router    *chi.Mux
-	EnvConfig *configs.EnvironmentConfig
-	DBConn    *database.DBConnection
+	Router       *chi.Mux
+	EnvConfig    *configs.EnvironmentConfig
+	DBConn       *database.DBConnection
+	SessionStore *sessions.CookieStore
+	CSRFKey      []byte
 }
 
 // NewAdminServer creates a new admin server instance
 func NewAdminServer(envConfig configs.EnvironmentConfig) (*AdminServer, error) {
 	// Note: Admin no longer uses a database - everything is filesystem-based
 	// We only need DB connections for individual website databases
+
+	// Create encrypted cookie session store
+	sessionKey := []byte(envConfig.Admin.SessionKey)
+	if len(sessionKey) != 32 {
+		log.Fatal("Admin session key must be exactly 32 bytes")
+	}
+
+	store := sessions.NewCookieStore(sessionKey)
+	store.Options = &sessions.Options{
+		Path:     "/",
+		MaxAge:   86400, // 24 hours
+		HttpOnly: true,
+		Secure:   envConfig.ProdMode,
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	// Validate CSRF key
+	csrfKey := []byte(envConfig.Admin.CSRFKey)
+	if len(csrfKey) != 32 {
+		log.Fatal("Admin CSRF key must be exactly 32 bytes")
+	}
+
 	server := &AdminServer{
-		Router:    chi.NewRouter(),
-		EnvConfig: &envConfig,
-		DBConn:    nil, // Not needed anymore
+		Router:       chi.NewRouter(),
+		EnvConfig:    &envConfig,
+		DBConn:       nil, // Not needed anymore
+		SessionStore: store,
+		CSRFKey:      csrfKey,
 	}
 
 	server.setupRoutes()
@@ -39,6 +67,19 @@ func (s *AdminServer) setupRoutes() {
 	s.Router.Use(middleware.Logger)
 	s.Router.Use(middleware.Recoverer)
 	s.Router.Use(middleware.Compress(5))
+
+	// CSRF protection - only enable in production
+	if s.EnvConfig.ProdMode {
+		csrfOptions := []csrf.Option{
+			csrf.Secure(true),
+			csrf.Path("/"),
+			csrf.SameSite(csrf.SameSiteLaxMode),
+			csrf.RequestHeader("X-CSRF-Token"),
+		}
+
+		csrfMiddleware := csrf.Protect(s.CSRFKey, csrfOptions...)
+		s.Router.Use(csrfMiddleware)
+	}
 
 	// Public routes (login)
 	s.Router.Get("/login", s.handleLoginPage)

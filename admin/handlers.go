@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/csrf"
 	"github.com/murdinc/stencil2/configs"
 	"github.com/murdinc/stencil2/database"
 	"github.com/murdinc/stencil2/email"
@@ -54,13 +55,13 @@ func validateSlug(slug string) error {
 // handleLoginPage renders the login page
 func (s *AdminServer) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	// Check if already logged in
-	sessionID := getSession(r)
-	if isSessionValid(sessionID) {
+	username := s.getSessionUsername(r)
+	if username != "" {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
-	s.renderTemplate(w, "login", nil)
+	s.renderTemplate(w, r, "login", nil)
 }
 
 // handleLogin processes the login form
@@ -75,27 +76,30 @@ func (s *AdminServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	validUsername := s.verifyCredentials(username, password)
 	if validUsername != "" {
-		s.createSession(w, validUsername)
+		if err := s.createSession(w, r, validUsername); err != nil {
+			http.Error(w, "Failed to create session", http.StatusInternalServerError)
+			return
+		}
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
-	s.renderTemplate(w, "login", map[string]interface{}{
+	s.renderTemplate(w, r, "login", map[string]interface{}{
 		"Error": "Invalid username or password",
 	})
 }
 
 // handleLogout logs out the user
 func (s *AdminServer) handleLogout(w http.ResponseWriter, r *http.Request) {
-	sessionID := getSession(r)
-	clearSession(w, sessionID)
+	
+	s.clearSession(w, r)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 // handleDashboard renders the main dashboard (no site selected)
 func (s *AdminServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	sessionID := getSession(r)
-	username := getSessionUsername(sessionID)
+	
+	username := s.getSessionUsername(r)
 
 	// Get all websites the user has access to
 	allSites, err := s.GetAllWebsites()
@@ -654,7 +658,11 @@ func (s *AdminServer) handleSuperadminUserCreate(w http.ResponseWriter, r *http.
 	}
 
 	// Hash password
-	passwordHash := hashPassword(password)
+	passwordHash, err := hashPassword(password)
+	if err != nil {
+		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
+		return
+	}
 
 	// Create new user
 	newUser := configs.AdminUser{
@@ -700,7 +708,12 @@ func (s *AdminServer) handleSuperadminUserUpdate(w http.ResponseWriter, r *http.
 
 			// Update password if provided
 			if newPassword != "" {
-				s.EnvConfig.Admin.Users[i].PasswordHash = hashPassword(newPassword)
+				newPasswordHash, err := hashPassword(newPassword)
+				if err != nil {
+					http.Error(w, "Failed to hash password", http.StatusInternalServerError)
+					return
+				}
+				s.EnvConfig.Admin.Users[i].PasswordHash = newPasswordHash
 			}
 
 			found = true
@@ -2495,7 +2508,7 @@ func (s *AdminServer) handleOrderFulfillmentUpdate(w http.ResponseWriter, r *htt
 
 	// Send shipping confirmation email if status changed to "shipped" and we have tracking info
 	if fulfillmentStatus == "shipped" && order.TrackingNumber != "" && order.ShippingCarrier != "" {
-		emailService, err := email.NewEmailService(s.EnvConfig)
+		emailService, err := email.NewEmailService()
 		if err == nil {
 			// Get website to build config
 			website, err := s.GetWebsite(websiteID)
@@ -2689,7 +2702,7 @@ func (s *AdminServer) handleShippingLabelPurchase(w http.ResponseWriter, r *http
 	}
 
 	// Send shipping confirmation email to customer
-	emailService, err := email.NewEmailService(s.EnvConfig)
+	emailService, err := email.NewEmailService()
 	if err == nil {
 		website, err := s.GetWebsite(websiteID)
 		if err == nil {
@@ -3341,7 +3354,7 @@ func (s *AdminServer) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 }
 
 // renderTemplate renders a template with data
-func (s *AdminServer) renderTemplate(w http.ResponseWriter, tmpl string, data interface{}) {
+func (s *AdminServer) renderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data interface{}) {
 	tmplPath := filepath.Join("admin", "templates", tmpl+".html")
 
 	t, err := template.ParseFiles(tmplPath)
@@ -3352,7 +3365,20 @@ func (s *AdminServer) renderTemplate(w http.ResponseWriter, tmpl string, data in
 		return
 	}
 
-	if err := t.Execute(w, data); err != nil {
+	// Add CSRF field to data
+	var templateData map[string]interface{}
+	if data != nil {
+		if m, ok := data.(map[string]interface{}); ok {
+			templateData = m
+		} else {
+			templateData = map[string]interface{}{"Data": data}
+		}
+	} else {
+		templateData = make(map[string]interface{})
+	}
+	templateData["CSRFField"] = csrf.TemplateField(r)
+
+	if err := t.Execute(w, templateData); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

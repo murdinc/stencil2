@@ -286,7 +286,7 @@ func (s *AdminServer) GetAllWebsites() ([]Website, error) {
 				SiteName      string `json:"siteName"`
 				APIVersion    int    `json:"apiVersion"`
 				Timezone      string `json:"timezone"`
-				Database      struct {
+				Database struct {
 					Name string `json:"name"`
 				} `json:"database"`
 				MediaProxyURL string `json:"mediaProxyUrl"`

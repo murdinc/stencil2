@@ -169,6 +169,8 @@ func (db *DBConnection) InitEcommerceTables() error {
 			INDEX idx_customer_id (customer_id),
 			INDEX idx_payment_status (payment_status),
 			INDEX idx_created_at (created_at),
+			INDEX idx_orders_customer_date (customer_id, created_at),
+			INDEX idx_orders_status_date (payment_status, created_at),
 			FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
 		)`,
 

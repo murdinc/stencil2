@@ -69,6 +69,39 @@ func (rl *contactRateLimiter) checkRateLimit(ip string) bool {
 	return true
 }
 
+// cleanup removes old entries from all IPs to prevent memory leak
+func (rl *contactRateLimiter) cleanup() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-1 * time.Hour)
+
+	for ip, times := range rl.submissions {
+		validTimes := []time.Time{}
+		for _, t := range times {
+			if t.After(cutoff) {
+				validTimes = append(validTimes, t)
+			}
+		}
+		if len(validTimes) == 0 {
+			delete(rl.submissions, ip)
+		} else {
+			rl.submissions[ip] = validTimes
+		}
+	}
+}
+
+// startCleanup starts a background goroutine to periodically clean up old entries
+func (rl *contactRateLimiter) startCleanup() {
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		for range ticker.C {
+			rl.cleanup()
+		}
+	}()
+}
+
 // API represents the V1 API instance.
 type APIV1 struct {
 	Routes        []Route
@@ -87,6 +120,9 @@ type ErrorResponse struct {
 func NewAPIV1(dbConn *database.DBConnection, websiteConfig *configs.WebsiteConfig, envConfig *configs.EnvironmentConfig) *APIV1 {
 	// Get Shippo API key from site config
 	shippoKey := websiteConfig.Shippo.APIKey
+
+	// Start rate limiter cleanup (only once for all sites)
+	rateLimiter.startCleanup()
 
 	api := &APIV1{
 		Routes:        make([]Route, 0),
@@ -560,8 +596,14 @@ func (api *APIV1) addToCart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if reqBody.Quantity <= 0 {
-		reqBody.Quantity = 1
+	// Validate quantity (1-100)
+	if reqBody.Quantity < 1 {
+		http.Error(w, "Quantity must be at least 1", http.StatusBadRequest)
+		return
+	}
+	if reqBody.Quantity > 100 {
+		http.Error(w, "Quantity cannot exceed 100", http.StatusBadRequest)
+		return
 	}
 
 	err = api.dbConn.AddToCart(sessionID, reqBody.ProductID, reqBody.VariantID, reqBody.Quantity)
@@ -601,6 +643,16 @@ func (api *APIV1) updateCartItem(w http.ResponseWriter, r *http.Request) {
 	err = json.NewDecoder(r.Body).Decode(&reqBody)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate quantity (1-100)
+	if reqBody.Quantity < 1 {
+		http.Error(w, "Quantity must be at least 1", http.StatusBadRequest)
+		return
+	}
+	if reqBody.Quantity > 100 {
+		http.Error(w, "Quantity cannot exceed 100", http.StatusBadRequest)
 		return
 	}
 
@@ -919,18 +971,11 @@ func (api *APIV1) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	stripeKey := api.websiteConfig.Stripe.SecretKey
 
 	// Verify webhook signature
-	// Note: In production, you should set up a webhook secret in Stripe dashboard
-	// and verify the signature using: webhook.ConstructEvent(body, r.Header.Get("Stripe-Signature"), webhookSecret)
 	event, err := webhook.ConstructEvent(body, r.Header.Get("Stripe-Signature"), stripeKey)
 	if err != nil {
 		log.Printf("Webhook signature verification failed: %v", err)
-		// For now, continue anyway for testing - REMOVE THIS IN PRODUCTION
-		var tempEvent stripe.Event
-		if err := json.Unmarshal(body, &tempEvent); err != nil {
-			http.Error(w, "Invalid webhook payload", http.StatusBadRequest)
-			return
-		}
-		event = tempEvent
+		http.Error(w, "Invalid signature", http.StatusUnauthorized)
+		return
 	}
 
 	// Handle the event
@@ -1003,7 +1048,7 @@ func (api *APIV1) handlePaymentSuccess(paymentIntentID string) error {
 	}
 
 	// Send confirmation email
-	emailService, err := email.NewEmailService(api.envConfig)
+	emailService, err := email.NewEmailService()
 	if err != nil {
 		log.Printf("Failed to create email service: %v", err)
 		return nil // Don't fail the webhook if email fails
@@ -1144,7 +1189,7 @@ func (api *APIV1) handleShippoWebhook(w http.ResponseWriter, r *http.Request) {
 
 	// Send delivery confirmation email if delivered
 	if fulfillmentStatus == "delivered" {
-		emailService, err := email.NewEmailService(api.envConfig)
+		emailService, err := email.NewEmailService()
 		if err == nil {
 			err = emailService.SendDeliveryConfirmation(
 				api.websiteConfig,
@@ -1253,7 +1298,12 @@ func (api *APIV1) createSMSSignup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate 6-digit verification code
-	code := utils.GenerateVerificationCode()
+	code, err := utils.GenerateVerificationCode()
+	if err != nil {
+		log.Printf("Failed to generate verification code: %v", err)
+		http.Error(w, "Failed to generate verification code", http.StatusInternalServerError)
+		return
+	}
 
 	// Set expiration to 10 minutes from now
 	expiresAt := time.Now().Add(10 * time.Minute)

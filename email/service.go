@@ -11,7 +11,6 @@ import (
 )
 
 type EmailService struct {
-	envConfig *configs.EnvironmentConfig
 }
 
 type EmailMessage struct {
@@ -25,10 +24,8 @@ type EmailMessage struct {
 }
 
 // NewEmailService creates a new email service
-func NewEmailService(envConfig *configs.EnvironmentConfig) (*EmailService, error) {
-	return &EmailService{
-		envConfig: envConfig,
-	}, nil
+func NewEmailService() (*EmailService, error) {
+	return &EmailService{}, nil
 }
 
 // SendEmail sends an email via SMTP
@@ -201,12 +198,6 @@ func (e *EmailService) SendOrderConfirmation(siteConfig *configs.WebsiteConfig, 
 	fromName := siteConfig.Email.FromName
 	replyTo := siteConfig.Email.ReplyTo
 
-	// Fallback to env config if site config doesn't have email settings
-	if fromAddress == "" {
-		fromAddress = e.envConfig.Email.Admin.FromAddress
-		fromName = e.envConfig.Email.Admin.FromName
-	}
-
 	return e.SendEmailWithSMTP(
 		EmailMessage{
 			To:          []string{customerEmail},
@@ -350,9 +341,6 @@ If you have any questions, please reply to this email.
 // SendAdminOrderNotification sends a new order notification to the admin
 func (e *EmailService) SendAdminOrderNotification(siteConfig *configs.WebsiteConfig, orderNumber, customerEmail, customerName string, items []OrderItem, subtotal, tax, shipping, total float64) error {
 	adminEmail := siteConfig.Email.FromAddress
-	if adminEmail == "" {
-		adminEmail = e.envConfig.Email.Admin.FromAddress
-	}
 
 	if adminEmail == "" {
 		return fmt.Errorf("no admin email configured")
@@ -361,12 +349,8 @@ func (e *EmailService) SendAdminOrderNotification(siteConfig *configs.WebsiteCon
 	htmlBody := e.buildAdminOrderNotificationHTML(siteConfig.SiteName, orderNumber, customerName, customerEmail, items, subtotal, tax, shipping, total)
 	textBody := e.buildAdminOrderNotificationText(siteConfig.SiteName, orderNumber, customerName, customerEmail, items, subtotal, tax, shipping, total)
 
-	fromAddress := e.envConfig.Email.Admin.FromAddress
+	fromAddress := siteConfig.Email.FromAddress
 	fromName := "Store Notifications"
-
-	if fromAddress == "" {
-		fromAddress = siteConfig.Email.FromAddress
-	}
 
 	return e.SendEmailWithSMTP(
 		EmailMessage{
@@ -516,11 +500,6 @@ func (e *EmailService) SendShippingConfirmation(siteConfig *configs.WebsiteConfi
 	fromName := siteConfig.Email.FromName
 	replyTo := siteConfig.Email.ReplyTo
 
-	if fromAddress == "" {
-		fromAddress = e.envConfig.Email.Admin.FromAddress
-		fromName = e.envConfig.Email.Admin.FromName
-	}
-
 	return e.SendEmailWithSMTP(
 		EmailMessage{
 			To:          []string{customerEmail},
@@ -616,11 +595,6 @@ func (e *EmailService) SendDeliveryConfirmation(siteConfig *configs.WebsiteConfi
 	fromAddress := siteConfig.Email.FromAddress
 	fromName := siteConfig.Email.FromName
 	replyTo := siteConfig.Email.ReplyTo
-
-	if fromAddress == "" {
-		fromAddress = e.envConfig.Email.Admin.FromAddress
-		fromName = e.envConfig.Email.Admin.FromName
-	}
 
 	return e.SendEmailWithSMTP(
 		EmailMessage{

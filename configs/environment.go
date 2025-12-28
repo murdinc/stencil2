@@ -24,26 +24,18 @@ type EnvironmentConfig struct {
 		User     string `json:"user"`
 		Port     string `json:"port"`
 		Password string `json:"password"`
-		Name     string `json:"name"`
 	} `json:"database"`
 	HTTP struct {
 		Port string `json:"port"`
 	} `json:"http"`
 	Admin struct {
-		Enabled  bool   `json:"enabled"`
-		Port     string `json:"port"`
-		Password string `json:"password"` // Password for the main "admin" user
-		Database struct {
-			Name string `json:"name"`
-		} `json:"database"`
-		Users []AdminUser `json:"users"` // Additional users with limited permissions
+		Enabled    bool   `json:"enabled"`
+		Port       string `json:"port"`
+		Password   string `json:"password"`   // Password for the main "admin" user
+		SessionKey string `json:"sessionKey"` // 32-byte key for encrypting session cookies
+		CSRFKey    string `json:"csrfKey"`    // 32-byte key for CSRF token encryption
+		Users      []AdminUser `json:"users"` // Additional users with limited permissions
 	} `json:"admin"`
-	Email struct {
-		Admin struct {
-			FromAddress string `json:"fromAddress"`
-			FromName    string `json:"fromName"`
-		} `json:"admin"`
-	} `json:"email"`
 }
 
 func ReadEnvironmentConfig(prodMode bool, hideErrors bool) (EnvironmentConfig, error) {
@@ -83,10 +75,37 @@ func ReadEnvironmentConfig(prodMode bool, hideErrors bool) (EnvironmentConfig, e
 		envConfig.Admin.Port = "8081"
 	}
 
-	// default admin database name
-	if envConfig.Admin.Database.Name == "" {
-		envConfig.Admin.Database.Name = "stencil_admin"
+	return envConfig, nil
+}
+
+// SaveEnvironmentConfig saves the environment config to disk
+func SaveEnvironmentConfig(envConfig *EnvironmentConfig, prodMode bool) error {
+	configName := "env-dev.json"
+	if prodMode {
+		configName = "env-prod.json"
 	}
 
-	return envConfig, nil
+	configPath := filepath.Join("websites", configName)
+
+	// Create a map to exclude runtime-only fields (ProdMode, HideErrors)
+	configMap := map[string]interface{}{
+		"baseUrl":  envConfig.BaseURL,
+		"database": envConfig.Database,
+		"http":     envConfig.HTTP,
+		"admin":    envConfig.Admin,
+	}
+
+	// Marshal config to JSON with indentation
+	configData, err := json.MarshalIndent(configMap, "", "\t")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %v", err)
+	}
+
+	// Write to file with proper permissions
+	err = ioutil.WriteFile(configPath, configData, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to write config file %s: %v", configName, err)
+	}
+
+	return nil
 }

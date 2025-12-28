@@ -13,7 +13,7 @@ type WebsiteConfig struct {
 	SiteName   string `json:"siteName"`
 	APIVersion int    `json:"apiVersion"`
 	Timezone   string `json:"timezone"` // IANA timezone (e.g., "America/Los_Angeles")
-	Database   struct {
+	Database struct {
 		Name string `json:"name"`
 	} `json:"database"`
 	MediaProxyURL string `json:"mediaProxyUrl"`

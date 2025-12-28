@@ -9,6 +9,7 @@ import (
 
 	"github.com/Masterminds/sprig"
 	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/csrf"
 )
 
 // Template functions - merge Sprig functions with custom ones
@@ -40,8 +41,7 @@ type LayoutData struct {
 // renderWithLayout renders a page using the layout template
 func (s *AdminServer) renderWithLayout(w http.ResponseWriter, r *http.Request, contentTemplate string, data map[string]interface{}) {
 	// Get current user from session
-	sessionID := getSession(r)
-	username := getSessionUsername(sessionID)
+	username := s.getSessionUsername(r)
 	isAdminUser := isAdmin(username)
 
 	// Get all sites
@@ -100,6 +100,8 @@ func (s *AdminServer) renderWithLayout(w http.ResponseWriter, r *http.Request, c
 		"ActiveSection": layoutData.ActiveSection,
 		"IsAdmin":       isAdminUser,
 		"Username":      username,
+		"CSRFToken":     csrf.Token(r),
+		"CSRFField":     csrf.TemplateField(r),
 	}
 	for k, v := range data {
 		finalData[k] = v

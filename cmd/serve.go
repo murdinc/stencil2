@@ -8,8 +8,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -49,6 +53,49 @@ func serve() {
 	envConfig, err := configs.ReadEnvironmentConfig(ProdMode, HideErrors)
 	if err != nil {
 		log.Fatalf("Failed to load the environment config: %v", err)
+	}
+
+	// Setup admin credentials and keys if needed
+	if envConfig.Admin.Enabled {
+		configModified := false
+
+		// Check if admin password needs to be set
+		if envConfig.Admin.Password == "" {
+			configModified = true
+			if err := setupAdminPassword(&envConfig); err != nil {
+				log.Fatalf("Failed to setup admin password: %v", err)
+			}
+		}
+
+		// Check if session key needs to be generated
+		if envConfig.Admin.SessionKey == "" || len(envConfig.Admin.SessionKey) != 32 {
+			configModified = true
+			sessionKey, err := utils.GenerateRandomKey(32)
+			if err != nil {
+				log.Fatalf("Failed to generate session key: %v", err)
+			}
+			envConfig.Admin.SessionKey = sessionKey
+			log.Println("Generated new session key")
+		}
+
+		// Check if CSRF key needs to be generated
+		if envConfig.Admin.CSRFKey == "" || len(envConfig.Admin.CSRFKey) != 32 {
+			configModified = true
+			csrfKey, err := utils.GenerateRandomKey(32)
+			if err != nil {
+				log.Fatalf("Failed to generate CSRF key: %v", err)
+			}
+			envConfig.Admin.CSRFKey = csrfKey
+			log.Println("Generated new CSRF key")
+		}
+
+		// Save config if modified
+		if configModified {
+			if err := configs.SaveEnvironmentConfig(&envConfig, ProdMode); err != nil {
+				log.Fatalf("Failed to save environment config: %v", err)
+			}
+			log.Println("✓ Environment config updated and saved")
+		}
 	}
 
 	// Read in the site configs
@@ -159,7 +206,12 @@ func serve() {
 	log.Println("starting http server...")
 	r.Mount("/", hr) // Mount the host router
 
-	// for server health checks
+	// Health check endpoint (simple - just checks if server is running)
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("healthy"))
+	})
+
+	// Legacy hello endpoint
 	r.Get("/hello", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("hi"))
 	})
@@ -170,8 +222,40 @@ func serve() {
 	}
 
 	port := fmt.Sprintf(":%d", portInt)
-	log.Fatal(http.ListenAndServe(port, r))
 
+	// Create HTTP server with timeouts
+	srv := &http.Server{
+		Addr:         port,
+		Handler:      r,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Start server in goroutine
+	go func() {
+		log.Printf("HTTP server listening on %s", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server error: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown the server
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	// Give outstanding requests 10 seconds to complete
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server stopped gracefully")
 }
 
 func EnvCtx(next http.Handler) http.Handler {
@@ -179,4 +263,41 @@ func EnvCtx(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), "prodmode", ProdMode)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// setupAdminPassword prompts for and sets up the admin password
+func setupAdminPassword(envConfig *configs.EnvironmentConfig) error {
+	fmt.Println("\n=== Admin Setup ===")
+	fmt.Println("No admin password found. Let's set one up.")
+	fmt.Print("Enter admin password: ")
+
+	password, err := utils.ReadPassword()
+	if err != nil {
+		return fmt.Errorf("failed to read password: %v", err)
+	}
+
+	if len(password) < 8 {
+		return fmt.Errorf("password must be at least 8 characters")
+	}
+
+	fmt.Print("Confirm admin password: ")
+	confirmPassword, err := utils.ReadPassword()
+	if err != nil {
+		return fmt.Errorf("failed to read confirmation: %v", err)
+	}
+
+	if password != confirmPassword {
+		return fmt.Errorf("passwords do not match")
+	}
+
+	// Hash the password with bcrypt
+	hashedPassword, err := utils.HashPassword(password)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %v", err)
+	}
+
+	envConfig.Admin.Password = hashedPassword
+	log.Println("✓ Admin password set successfully")
+
+	return nil
 }

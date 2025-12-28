@@ -1,13 +1,11 @@
 package admin
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/murdinc/stencil2/utils"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -15,19 +13,19 @@ const (
 	SessionDuration   = 24 * time.Hour
 )
 
-// SessionData stores session information including username
-type SessionData struct {
-	Username  string
-	ExpiresAt time.Time
+// hashPassword creates a bcrypt hash of the password
+func hashPassword(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	if err != nil {
+		return "", err
+	}
+	return string(hash), nil
 }
 
-// Session storage (in-memory for now, could be moved to database)
-var sessions = make(map[string]SessionData)
-
-// hashPassword creates a SHA256 hash of the password
-func hashPassword(password string) string {
-	hash := sha256.Sum256([]byte(password))
-	return hex.EncodeToString(hash[:])
+// verifyPassword compares a password with a bcrypt hash
+func verifyPassword(password, hash string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
 }
 
 // verifyCredentials checks if the provided username and password are valid
@@ -35,9 +33,7 @@ func hashPassword(password string) string {
 func (s *AdminServer) verifyCredentials(username, password string) string {
 	// Check if it's the main admin user
 	if username == "admin" {
-		expectedHash := hashPassword(s.EnvConfig.Admin.Password)
-		providedHash := hashPassword(password)
-		if expectedHash == providedHash {
+		if verifyPassword(password, s.EnvConfig.Admin.Password) {
 			return "admin"
 		}
 		return ""
@@ -46,8 +42,7 @@ func (s *AdminServer) verifyCredentials(username, password string) string {
 	// Check configured users
 	for _, user := range s.EnvConfig.Admin.Users {
 		if user.Username == username {
-			providedHash := hashPassword(password)
-			if user.PasswordHash == providedHash {
+			if verifyPassword(password, user.PasswordHash) {
 				return username
 			}
 			return ""
@@ -58,69 +53,40 @@ func (s *AdminServer) verifyCredentials(username, password string) string {
 }
 
 // createSession creates a new session for the user
-func (s *AdminServer) createSession(w http.ResponseWriter, username string) string {
-	sessionID := utils.GenerateSessionID()
-	sessions[sessionID] = SessionData{
-		Username:  username,
-		ExpiresAt: time.Now().Add(SessionDuration),
-	}
-
-	utils.SetCookie(w, SessionCookieName, sessionID, "/", int(SessionDuration.Seconds()))
-
-	return sessionID
-}
-
-// getSession retrieves the session ID from the cookie
-func getSession(r *http.Request) string {
-	cookie, err := r.Cookie(SessionCookieName)
+func (s *AdminServer) createSession(w http.ResponseWriter, r *http.Request, username string) error {
+	session, err := s.SessionStore.Get(r, SessionCookieName)
 	if err != nil {
-		return ""
-	}
-	return cookie.Value
-}
-
-// isSessionValid checks if the session is valid and not expired
-func isSessionValid(sessionID string) bool {
-	if sessionID == "" {
-		return false
+		session, _ = s.SessionStore.New(r, SessionCookieName)
 	}
 
-	sessionData, exists := sessions[sessionID]
-	if !exists {
-		return false
-	}
-
-	if time.Now().After(sessionData.ExpiresAt) {
-		delete(sessions, sessionID)
-		return false
-	}
-
-	return true
+	session.Values["username"] = username
+	return session.Save(r, w)
 }
 
 // getSessionUsername returns the username for the session, or empty string if invalid
-func getSessionUsername(sessionID string) string {
-	if sessionID == "" {
+func (s *AdminServer) getSessionUsername(r *http.Request) string {
+	session, err := s.SessionStore.Get(r, SessionCookieName)
+	if err != nil {
 		return ""
 	}
 
-	sessionData, exists := sessions[sessionID]
-	if !exists {
+	username, ok := session.Values["username"].(string)
+	if !ok {
 		return ""
 	}
 
-	if time.Now().After(sessionData.ExpiresAt) {
-		delete(sessions, sessionID)
-		return ""
-	}
-
-	return sessionData.Username
+	return username
 }
 
 // clearSession removes the session
-func clearSession(w http.ResponseWriter, sessionID string) {
-	delete(sessions, sessionID)
-	utils.ClearCookie(w, SessionCookieName, "/")
+func (s *AdminServer) clearSession(w http.ResponseWriter, r *http.Request) {
+	session, err := s.SessionStore.Get(r, SessionCookieName)
+	if err != nil {
+		return
+	}
+
+	session.Options.MaxAge = -1
+	session.Save(r, w)
 }
 
 // isAdmin checks if the username is the main admin user
@@ -175,16 +141,11 @@ func (s *AdminServer) canAccessSite(username, siteID string) bool {
 // requireAuth middleware ensures the user is authenticated
 func (s *AdminServer) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sessionID := getSession(r)
-		if !isSessionValid(sessionID) {
+		username := s.getSessionUsername(r)
+		if username == "" {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
-
-		// Extend session expiry
-		sessionData := sessions[sessionID]
-		sessionData.ExpiresAt = time.Now().Add(SessionDuration)
-		sessions[sessionID] = sessionData
 
 		next.ServeHTTP(w, r)
 	})
@@ -193,8 +154,11 @@ func (s *AdminServer) requireAuth(next http.Handler) http.Handler {
 // requireSiteAccess middleware ensures the user has access to the site in the URL
 func (s *AdminServer) requireSiteAccess(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sessionID := getSession(r)
-		username := getSessionUsername(sessionID)
+		username := s.getSessionUsername(r)
+		if username == "" {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
 
 		// Get site ID from URL
 		siteID := chi.URLParam(r, "id")
@@ -212,8 +176,11 @@ func (s *AdminServer) requireSiteAccess(next http.Handler) http.Handler {
 // requireSuperadmin middleware ensures only admin user can access
 func (s *AdminServer) requireSuperadmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sessionID := getSession(r)
-		username := getSessionUsername(sessionID)
+		username := s.getSessionUsername(r)
+		if username == "" {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
 
 		if !isAdmin(username) {
 			http.Error(w, "Access denied: Superadmin access required", http.StatusForbidden)
