@@ -213,7 +213,11 @@ func (s *AdminServer) handleSiteDashboard(w http.ResponseWriter, r *http.Request
 	}
 	now := time.Now().In(loc)
 	endDate := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, loc)
-	startDate := endDate.AddDate(0, 0, -6) // -6 to include today as the 7th day
+	startDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, -6) // Start at midnight 6 days ago
+
+	// Debug: Log the date range
+	log.Printf("Overview date range for %s: %s to %s", websiteID, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
+
 	timeSeriesData, err := s.GetAnalyticsTimeSeries(websiteID, startDate, endDate, site.Timezone)
 	if err != nil {
 		log.Printf("Error fetching time series data: %v", err)
@@ -3175,7 +3179,7 @@ func (s *AdminServer) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().In(loc)
 	endDate := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, loc)
-	startDate := endDate.AddDate(0, 0, -days+1)
+	startDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, -days+1) // Start at midnight
 
 	// Get analytics data
 	stats, err := s.GetPageViewStats(websiteID, startDate, endDate)

@@ -3240,21 +3240,39 @@ func (s *AdminServer) GetCurrentPages(websiteID string, minutesAgo int) ([]map[s
 
 	cutoffTime := time.Now().Add(-time.Duration(minutesAgo) * time.Minute)
 
+	// Get sessions with activity (pageviews or heartbeats) in the last N minutes
+	// and find their most recent page
 	query := `
-		SELECT path, COUNT(DISTINCT session_id) as active_viewers
+		SELECT p.path, COUNT(DISTINCT p.session_id) as active_viewers
 		FROM (
+			SELECT session_id, MAX(last_activity) as last_activity
+			FROM (
+				SELECT session_id, MAX(created_at) as last_activity
+				FROM analytics_pageviews
+				WHERE created_at >= ?
+				GROUP BY session_id
+
+				UNION ALL
+
+				SELECT session_id, MAX(created_at) as last_activity
+				FROM analytics_events
+				WHERE event_name = 'heartbeat' AND created_at >= ?
+				GROUP BY session_id
+			) combined
+			GROUP BY session_id
+			HAVING MAX(last_activity) >= ?
+		) active_sessions
+		JOIN (
 			SELECT session_id, path, created_at,
 				ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY created_at DESC) as rn
 			FROM analytics_pageviews
-			WHERE created_at >= ?
-		) as recent_views
-		WHERE rn = 1
-		GROUP BY path
+		) p ON active_sessions.session_id = p.session_id AND p.rn = 1
+		GROUP BY p.path
 		ORDER BY active_viewers DESC
 		LIMIT 20
 	`
 
-	rows, err := db.Query(query, cutoffTime)
+	rows, err := db.Query(query, cutoffTime, cutoffTime, cutoffTime)
 	if err != nil {
 		return nil, err
 	}
