@@ -4,10 +4,12 @@
     <p>Select a website from the dropdown above to manage its content</p>
 </div>
 
+{{if .IsAdmin}}
 <div class="card">
     <h3>Quick Actions</h3>
     <a href="/websites/new" class="btn btn-success">Create New Website</a>
 </div>
+{{end}}
 
 {{if .AllSites}}
 <div class="card">

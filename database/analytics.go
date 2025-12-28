@@ -25,6 +25,7 @@ func (db *DBConnection) InitAnalyticsTables() error {
 			screen_width INT DEFAULT NULL,
 			screen_height INT DEFAULT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			time_on_page INT DEFAULT 0,
 			INDEX idx_visitor_id (visitor_id),
 			INDEX idx_session_id (session_id),
 			INDEX idx_path (path(255)),
@@ -62,6 +63,10 @@ func (db *DBConnection) InitAnalyticsTables() error {
 		`ALTER TABLE analytics_events
 		 ADD COLUMN IF NOT EXISTS visitor_id VARCHAR(36) NOT NULL DEFAULT '' AFTER id,
 		 ADD INDEX IF NOT EXISTS idx_visitor_id (visitor_id)`,
+
+		// Add time_on_page to analytics_pageviews if it doesn't exist
+		`ALTER TABLE analytics_pageviews
+		 ADD COLUMN IF NOT EXISTS time_on_page INT DEFAULT 0 AFTER created_at`,
 	}
 
 	for _, schema := range schemas {
@@ -79,14 +84,34 @@ func (db *DBConnection) InitAnalyticsTables() error {
 	return nil
 }
 
-// TrackPageView records a page view
-func (db *DBConnection) TrackPageView(visitorID, sessionID, path, referrer, userAgent, ipAddress string, screenWidth, screenHeight int) error {
+// TrackPageView records a page view and returns the pageview ID
+func (db *DBConnection) TrackPageView(visitorID, sessionID, path, referrer, userAgent, ipAddress string, screenWidth, screenHeight int) (int64, error) {
 	sqlQuery := `
 		INSERT INTO analytics_pageviews
 		(visitor_id, session_id, path, referrer, user_agent, ip_address, screen_width, screen_height)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	_, err := db.ExecuteQuery(sqlQuery, visitorID, sessionID, path, referrer, userAgent, ipAddress, screenWidth, screenHeight)
+	result, err := db.ExecuteQuery(sqlQuery, visitorID, sessionID, path, referrer, userAgent, ipAddress, screenWidth, screenHeight)
+	if err != nil {
+		return 0, err
+	}
+
+	pageviewID, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	return pageviewID, nil
+}
+
+// UpdatePageViewTime updates the time_on_page for a specific pageview
+func (db *DBConnection) UpdatePageViewTime(pageviewID int64, timeOnPage int) error {
+	sqlQuery := `
+		UPDATE analytics_pageviews
+		SET time_on_page = ?
+		WHERE id = ?
+	`
+	_, err := db.ExecuteQuery(sqlQuery, timeOnPage, pageviewID)
 	return err
 }
 

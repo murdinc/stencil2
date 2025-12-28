@@ -1,0 +1,234 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>User Management</h2>
+    <p>Manage admin users and their website access permissions</p>
+</div>
+
+<div class="card">
+    <h3>Create New User</h3>
+    <form method="POST" action="/superadmin/users/create" style="max-width: 600px;">
+        <div class="form-group">
+            <label>Username:</label>
+            <input type="text" name="username" placeholder="e.g., john" required>
+            <p style="font-size: 12px; color: #7f8c8d; margin: 5px 0 0 0;">Lowercase, no spaces</p>
+        </div>
+
+        <div class="form-group">
+            <label>Password:</label>
+            <input type="password" name="password" placeholder="Enter password" required>
+        </div>
+
+        <div class="form-group">
+            <label style="display: flex; align-items: center; cursor: pointer;">
+                <input type="checkbox" name="allSites" value="true" style="width: auto; margin-right: 8px;">
+                Grant access to all websites
+            </label>
+        </div>
+
+        <div class="form-group" id="site-selection">
+            <label>Or select specific websites:</label>
+            <div style="max-height: 200px; overflow-y: auto; border: 1px solid #e1e8ed; border-radius: 6px; padding: 12px;">
+                {{range .Websites}}
+                <label style="display: block; padding: 6px 0; cursor: pointer;">
+                    <input type="checkbox" name="siteIds" value="{{.DatabaseName}}" style="width: auto; margin-right: 8px;">
+                    {{.SiteName}} <code style="font-size: 11px; color: #666;">({{.DatabaseName}})</code>
+                </label>
+                {{end}}
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-success" style="margin-top: 20px;">Create User</button>
+    </form>
+</div>
+
+{{if .Users}}
+<div class="card" style="margin-top: 30px;">
+    <h3>Existing Users</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Access</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Users}}
+            <tr>
+                <td><strong>{{.Username}}</strong></td>
+                <td>
+                    {{if .AllSites}}
+                    <span style="color: #27ae60; font-weight: 600;">All Websites</span>
+                    {{else}}
+                    <span style="color: #666;">{{len .SiteIDs}} website(s)</span>
+                    {{end}}
+                </td>
+                <td>
+                    <button type="button" class="btn btn-sm" onclick="toggleEdit('{{.Username}}')" style="background: #3498db; color: white; margin-right: 8px;">Edit</button>
+                    <form method="POST" action="/superadmin/users/delete" style="display: inline;">
+                        <input type="hidden" name="username" value="{{.Username}}">
+                        <button type="submit" class="btn btn-sm" style="background: #e74c3c; color: white;" onclick="return confirm('Delete user {{.Username}}?')">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            <tr id="edit-{{.Username}}" style="display: none;">
+                <td colspan="3" style="background: #f7f9fc; padding: 20px;">
+                    <form method="POST" action="/superadmin/users/update">
+                        <input type="hidden" name="username" value="{{.Username}}">
+
+                        <h4 style="margin-bottom: 16px; color: #2d3748;">Edit User: {{.Username}}</h4>
+
+                        <div class="form-group">
+                            <label>New Password (leave blank to keep current):</label>
+                            <input type="password" name="password" placeholder="Enter new password to reset">
+                        </div>
+
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" name="allSites" value="true" {{if .AllSites}}checked{{end}} style="width: auto; margin-right: 8px;" onchange="toggleSiteSelection(this, '{{.Username}}')">
+                                Grant access to all websites
+                            </label>
+                        </div>
+
+                        <div class="form-group" id="sites-{{.Username}}">
+                            <label>Or select specific websites:</label>
+                            <div style="max-height: 200px; overflow-y: auto; border: 1px solid #e1e8ed; border-radius: 6px; padding: 12px;">
+                                {{range $.Websites}}
+                                <label style="display: block; padding: 6px 0; cursor: pointer;">
+                                    <input type="checkbox" name="siteIds" value="{{.DatabaseName}}"
+                                        {{range $userRef := $.Users}}
+                                            {{if eq $userRef.Username $.Username}}
+                                                {{range $siteId := $userRef.SiteIDs}}
+                                                    {{if eq $siteId $.DatabaseName}}checked{{end}}
+                                                {{end}}
+                                            {{end}}
+                                        {{end}}
+                                        style="width: auto; margin-right: 8px;">
+                                    {{.SiteName}} <code style="font-size: 11px; color: #666;">({{.DatabaseName}})</code>
+                                </label>
+                                {{end}}
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 16px;">
+                            <button type="submit" class="btn btn-success">Save Changes</button>
+                            <button type="button" class="btn" onclick="toggleEdit('{{.Username}}')">Cancel</button>
+                        </div>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}
+
+<style>
+    .form-group {
+        margin-bottom: 20px;
+    }
+    .form-group label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #2d3748;
+        font-size: 14px;
+    }
+    .form-group input[type="text"],
+    .form-group input[type="password"] {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #e1e8ed;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+    .form-group input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    th {
+        text-align: left;
+        padding: 12px;
+        background: #f7f9fc;
+        font-weight: 600;
+        font-size: 13px;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid #e1e8ed;
+    }
+    td {
+        padding: 14px 12px;
+        border-bottom: 1px solid #f0f3f7;
+        color: #2d3748;
+        font-size: 14px;
+    }
+    tr:hover {
+        background: #f7f9fc;
+    }
+    tr:last-child td {
+        border-bottom: none;
+    }
+</style>
+
+<script>
+// Toggle site selection based on allSites checkbox (for create form)
+const createAllSitesCheckbox = document.querySelector('form[action="/superadmin/users/create"] input[name="allSites"]');
+if (createAllSitesCheckbox) {
+    createAllSitesCheckbox.addEventListener('change', function() {
+        const siteSelection = document.getElementById('site-selection');
+        if (this.checked) {
+            siteSelection.style.opacity = '0.5';
+            siteSelection.style.pointerEvents = 'none';
+            document.querySelectorAll('#site-selection input[name="siteIds"]').forEach(cb => cb.checked = false);
+        } else {
+            siteSelection.style.opacity = '1';
+            siteSelection.style.pointerEvents = 'auto';
+        }
+    });
+}
+
+// Toggle edit form visibility
+function toggleEdit(username) {
+    const editRow = document.getElementById('edit-' + username);
+    if (editRow.style.display === 'none') {
+        editRow.style.display = 'table-row';
+    } else {
+        editRow.style.display = 'none';
+    }
+}
+
+// Toggle site selection for edit forms
+function toggleSiteSelection(checkbox, username) {
+    const sitesDiv = document.getElementById('sites-' + username);
+    if (checkbox.checked) {
+        sitesDiv.style.opacity = '0.5';
+        sitesDiv.style.pointerEvents = 'none';
+        sitesDiv.querySelectorAll('input[name="siteIds"]').forEach(cb => cb.checked = false);
+    } else {
+        sitesDiv.style.opacity = '1';
+        sitesDiv.style.pointerEvents = 'auto';
+    }
+}
+
+// Initialize edit form states on page load
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('input[name="allSites"]:checked').forEach(function(checkbox) {
+        const form = checkbox.closest('form');
+        if (form && form.action.includes('/update')) {
+            const username = form.querySelector('input[name="username"]').value;
+            const sitesDiv = document.getElementById('sites-' + username);
+            if (sitesDiv) {
+                sitesDiv.style.opacity = '0.5';
+                sitesDiv.style.pointerEvents = 'none';
+            }
+        }
+    });
+});
+</script>
+{{end}}

@@ -148,20 +148,29 @@
             </div>
         </div>
 
+        {{if eq .RecipientCount 0}}
+        <div style="background: #f3f4f6; border: 1px solid #d1d5db; padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem;">
+            <strong style="color: #6b7280;">ℹ️ No Recipients Selected</strong>
+            <p style="color: #6b7280; margin-top: 0.5rem; margin-bottom: 0;">
+                Adjust the filters above to select verified recipients, or <a href="/site/{{.Website.ID}}/sms-signups" style="color: #2563eb; text-decoration: underline;">add SMS signups</a>.
+            </p>
+        </div>
+        {{else}}
         <div style="background: #fef3c7; border: 1px solid #fbbf24; padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem;">
             <strong style="color: #92400e;">⚠️ Warning</strong>
             <p style="color: #92400e; margin-top: 0.5rem; margin-bottom: 0;">
                 This will send an SMS to {{.RecipientCount}} verified recipients. This action cannot be undone and may incur charges.
             </p>
         </div>
+        {{end}}
 
         <div style="display: flex; gap: 1rem;">
             <button
                 type="submit"
                 class="btn"
-                style="background: #a52a2a; flex: 1;"
+                style="background: #a52a2a; flex: 1; {{if eq .RecipientCount 0}}opacity: 0.5; cursor: not-allowed;{{end}}"
                 {{if eq .RecipientCount 0}}disabled{{end}}
-                onclick="return confirm('Are you sure you want to send this message to {{.RecipientCount}} recipients?')"
+                {{if ne .RecipientCount 0}}onclick="return confirm('Are you sure you want to send this message to {{.RecipientCount}} recipients?')"{{end}}
             >
                 Send to {{.RecipientCount}} Recipients
             </button>

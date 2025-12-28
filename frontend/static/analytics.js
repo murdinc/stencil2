@@ -9,7 +9,11 @@
     var VISITOR_DURATION = 365 * 24 * 60 * 60 * 1000; // 1 year
     var HEARTBEAT_INTERVAL = 30 * 1000; // 30 seconds
     var heartbeatTimer = null;
-    var isVisible = true;
+    var isVisible = !document.hidden;
+    var pageLoadTime = Date.now();
+    var visibleStartTime = isVisible ? Date.now() : null;
+    var totalVisibleTime = 0;
+    var pageviewId = null;
 
     // Visitor ID management (persistent, 1 year)
     function getVisitorId() {
@@ -76,6 +80,42 @@
         return 'desktop';
     }
 
+    // Calculate current visible time
+    function getVisibleTime() {
+        var time = totalVisibleTime;
+        if (visibleStartTime !== null) {
+            time += Date.now() - visibleStartTime;
+        }
+        return Math.floor(time / 1000); // Return in seconds
+    }
+
+    // Send time update to server
+    function sendTimeUpdate() {
+        if (!pageviewId) return;
+
+        var timeOnPage = getVisibleTime();
+        if (timeOnPage === 0) return;
+
+        var payload = {
+            v: getVisitorId(),
+            s: getSessionId(),
+            t: 'u', // 'u' for update
+            pid: pageviewId,
+            top: timeOnPage
+        };
+
+        if (navigator.sendBeacon) {
+            navigator.sendBeacon('/api/v1/track', JSON.stringify(payload));
+        } else {
+            fetch('/api/v1/track', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                keepalive: true
+            }).catch(function() {});
+        }
+    }
+
     // Track function
     function track(type, eventName, eventData) {
         var payload = {
@@ -96,16 +136,30 @@
             }
         }
 
-        // Use sendBeacon for reliability
-        if (navigator.sendBeacon) {
-            navigator.sendBeacon('/api/v1/track', JSON.stringify(payload));
-        } else {
+        // Use sendBeacon for reliability, but use fetch for pageviews to get response
+        if (type === 'p') {
             fetch('/api/v1/track', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-                keepalive: true
+                body: JSON.stringify(payload)
+            }).then(function(response) {
+                return response.json();
+            }).then(function(data) {
+                if (data && data.pageview_id) {
+                    pageviewId = data.pageview_id;
+                }
             }).catch(function() {});
+        } else {
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon('/api/v1/track', JSON.stringify(payload));
+            } else {
+                fetch('/api/v1/track', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    keepalive: true
+                }).catch(function() {});
+            }
         }
     }
 
@@ -131,10 +185,18 @@
     // Visibility tracking for accurate session duration
     function handleVisibilityChange() {
         if (document.hidden) {
+            // Page became hidden - stop counting visible time
+            if (visibleStartTime !== null) {
+                totalVisibleTime += Date.now() - visibleStartTime;
+                visibleStartTime = null;
+            }
             isVisible = false;
             stopHeartbeat();
+            sendTimeUpdate(); // Send time update when page becomes hidden
         } else {
+            // Page became visible - start counting
             isVisible = true;
+            visibleStartTime = Date.now();
             startHeartbeat();
             sendHeartbeat(); // Send immediately when tab becomes visible
         }
@@ -158,7 +220,15 @@
     // Track before page unload
     window.addEventListener('beforeunload', function() {
         stopHeartbeat();
+        sendTimeUpdate(); // Send final time update before leaving
     });
+
+    // Also send time update periodically (every 30 seconds)
+    setInterval(function() {
+        if (isVisible && pageviewId) {
+            sendTimeUpdate();
+        }
+    }, 30000);
 
     // Expose global analytics API
     window.analytics = {

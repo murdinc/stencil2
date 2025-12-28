@@ -12,6 +12,7 @@ import (
 type WebsiteConfig struct {
 	SiteName   string `json:"siteName"`
 	APIVersion int    `json:"apiVersion"`
+	Timezone   string `json:"timezone"` // IANA timezone (e.g., "America/Los_Angeles")
 	Database   struct {
 		Name string `json:"name"`
 	} `json:"database"`
@@ -111,6 +112,11 @@ func ReadWebsiteConfigs(prodMode bool) ([]WebsiteConfig, error) {
 			// default API version (1)
 			if websiteConfig.APIVersion == 0 {
 				websiteConfig.APIVersion = 1
+			}
+
+			// default timezone to PST
+			if websiteConfig.Timezone == "" {
+				websiteConfig.Timezone = "America/Los_Angeles"
 			}
 
 			websiteConfig.Directory = path

@@ -52,96 +52,112 @@ func (s *AdminServer) setupRoutes() {
 		r.Get("/", s.handleDashboard)
 		r.Get("/logout", s.handleLogout)
 
-		// Website management (legacy)
-		r.Get("/websites/new", s.handleWebsiteNew)
-		r.Post("/websites/new", s.handleWebsiteCreate)
+		// Website management (legacy - admin only)
+		r.Group(func(r chi.Router) {
+			r.Use(s.requireSuperadmin)
+			r.Get("/websites/new", s.handleWebsiteNew)
+			r.Post("/websites/new", s.handleWebsiteCreate)
+		})
 
-		// Superadmin console
-		r.Get("/superadmin", s.handleSuperadmin)
-		r.Get("/superadmin/websites/new", s.handleSuperadminWebsiteNew)
-		r.Post("/superadmin/websites/new", s.handleSuperadminWebsiteCreate)
+		// Superadmin console (admin only)
+		r.Group(func(r chi.Router) {
+			r.Use(s.requireSuperadmin)
+			r.Get("/superadmin", s.handleSuperadmin)
+			r.Get("/superadmin/checkup", s.handleSuperadminCheckup)
+			r.Get("/superadmin/websites/new", s.handleSuperadminWebsiteNew)
+			r.Post("/superadmin/websites/new", s.handleSuperadminWebsiteCreate)
+			r.Get("/superadmin/users", s.handleSuperadminUsers)
+			r.Post("/superadmin/users/create", s.handleSuperadminUserCreate)
+			r.Post("/superadmin/users/update", s.handleSuperadminUserUpdate)
+			r.Post("/superadmin/users/delete", s.handleSuperadminUserDelete)
+		})
 
-		// Site context routes (ID is database name)
-		r.Get("/site/{id}", s.handleSiteDashboard)
-		r.Get("/site/{id}/settings", s.handleSiteSettings)
-		r.Post("/site/{id}/settings", s.handleSiteSettingsUpdate)
-		r.Get("/site/{id}/webhooks", s.handleWebhooks)
-		r.Post("/site/{id}/delete", s.handleWebsiteDelete)
+		// Site context routes (ID is database name) - requires site access
+		r.Route("/site/{id}", func(r chi.Router) {
+			r.Use(s.requireSiteAccess)
 
-		// Article management
-		r.Get("/site/{id}/articles", s.handleArticlesList)
-		r.Get("/site/{id}/articles/new", s.handleArticleNew)
-		r.Post("/site/{id}/articles/new", s.handleArticleCreate)
-		r.Get("/site/{id}/articles/{articleId}/edit", s.handleArticleEdit)
-		r.Post("/site/{id}/articles/{articleId}/edit", s.handleArticleUpdate)
-		r.Post("/site/{id}/articles/{articleId}/delete", s.handleArticleDelete)
+			// Site dashboard and settings
+			r.Get("/", s.handleSiteDashboard)
+			r.Get("/settings", s.handleSiteSettings)
+			r.Post("/settings", s.handleSiteSettingsUpdate)
+			r.Get("/webhooks", s.handleWebhooks)
+			r.Post("/delete", s.handleWebsiteDelete)
 
-		// Product management
-		r.Get("/site/{id}/products", s.handleProductsList)
-		r.Get("/site/{id}/products/new", s.handleProductNew)
-		r.Post("/site/{id}/products/new", s.handleProductCreate)
-		r.Get("/site/{id}/products/{productId}/edit", s.handleProductEdit)
-		r.Post("/site/{id}/products/{productId}/edit", s.handleProductUpdate)
-		r.Post("/site/{id}/products/{productId}/delete", s.handleProductDelete)
-		r.Post("/site/{id}/products/{productId}/reorder/{direction}", s.handleProductReorder)
-		r.Post("/site/{id}/products/{productId}/images/reorder", s.handleProductImageReorder)
+			// Article management
+			r.Get("/articles", s.handleArticlesList)
+			r.Get("/articles/new", s.handleArticleNew)
+			r.Post("/articles/new", s.handleArticleCreate)
+			r.Get("/articles/{articleId}/edit", s.handleArticleEdit)
+			r.Post("/articles/{articleId}/edit", s.handleArticleUpdate)
+			r.Post("/articles/{articleId}/delete", s.handleArticleDelete)
 
-		// Variant management
-		r.Get("/site/{id}/products/{productId}/variants/new", s.handleVariantNew)
-		r.Post("/site/{id}/products/{productId}/variants/create", s.handleVariantCreate)
-		r.Get("/site/{id}/products/{productId}/variants/{variantId}/edit", s.handleVariantEdit)
-		r.Post("/site/{id}/products/{productId}/variants/{variantId}/update", s.handleVariantUpdate)
-		r.Post("/site/{id}/products/{productId}/variants/{variantId}/delete", s.handleVariantDelete)
-		r.Post("/site/{id}/products/{productId}/variants/{variantId}/reorder/{direction}", s.handleVariantReorder)
+			// Product management
+			r.Get("/products", s.handleProductsList)
+			r.Get("/products/new", s.handleProductNew)
+			r.Post("/products/new", s.handleProductCreate)
+			r.Get("/products/{productId}/edit", s.handleProductEdit)
+			r.Post("/products/{productId}/edit", s.handleProductUpdate)
+			r.Post("/products/{productId}/delete", s.handleProductDelete)
+			r.Post("/products/{productId}/reorder/{direction}", s.handleProductReorder)
+			r.Post("/products/{productId}/images/reorder", s.handleProductImageReorder)
 
-		// Category management
-		r.Get("/site/{id}/categories", s.handleCategoriesList)
-		r.Post("/site/{id}/categories/new", s.handleCategoryCreate)
-		r.Post("/site/{id}/categories/{categoryId}/delete", s.handleCategoryDelete)
+			// Variant management
+			r.Get("/products/{productId}/variants/new", s.handleVariantNew)
+			r.Post("/products/{productId}/variants/create", s.handleVariantCreate)
+			r.Get("/products/{productId}/variants/{variantId}/edit", s.handleVariantEdit)
+			r.Post("/products/{productId}/variants/{variantId}/update", s.handleVariantUpdate)
+			r.Post("/products/{productId}/variants/{variantId}/delete", s.handleVariantDelete)
+			r.Post("/products/{productId}/variants/{variantId}/reorder/{direction}", s.handleVariantReorder)
 
-		// Collection management
-		r.Get("/site/{id}/collections", s.handleCollectionsList)
-		r.Post("/site/{id}/collections/new", s.handleCollectionCreate)
-		r.Get("/site/{id}/collections/{collectionId}/edit", s.handleCollectionEditForm)
-		r.Post("/site/{id}/collections/{collectionId}/edit", s.handleCollectionUpdate)
-		r.Post("/site/{id}/collections/{collectionId}/reorder/{direction}", s.handleCollectionReorder)
-		r.Post("/site/{id}/collections/{collectionId}/delete", s.handleCollectionDelete)
+			// Category management
+			r.Get("/categories", s.handleCategoriesList)
+			r.Post("/categories/new", s.handleCategoryCreate)
+			r.Post("/categories/{categoryId}/delete", s.handleCategoryDelete)
 
-		// Image management
-		r.Get("/site/{id}/images", s.handleImagesList)
-		r.Post("/site/{id}/images/upload", s.handleImageUpload)
-		r.Post("/site/{id}/images/{imageId}/delete", s.handleImageDelete)
+			// Collection management
+			r.Get("/collections", s.handleCollectionsList)
+			r.Post("/collections/new", s.handleCollectionCreate)
+			r.Get("/collections/{collectionId}/edit", s.handleCollectionEditForm)
+			r.Post("/collections/{collectionId}/edit", s.handleCollectionUpdate)
+			r.Post("/collections/{collectionId}/reorder/{direction}", s.handleCollectionReorder)
+			r.Post("/collections/{collectionId}/delete", s.handleCollectionDelete)
 
-		// Order management
-		r.Get("/site/{id}/orders", s.handleOrdersList)
-		r.Get("/site/{id}/orders/{orderId}", s.handleOrderDetail)
-		r.Get("/site/{id}/orders/{orderId}/packing-slip", s.handlePackingSlip)
-		r.Post("/site/{id}/orders/{orderId}/fulfillment", s.handleOrderFulfillmentUpdate)
-		r.Post("/site/{id}/orders/{orderId}/shipping/rates", s.handleShippingRates)
-		r.Post("/site/{id}/orders/{orderId}/shipping/purchase", s.handleShippingLabelPurchase)
+			// Image management
+			r.Get("/images", s.handleImagesList)
+			r.Post("/images/upload", s.handleImageUpload)
+			r.Post("/images/{imageId}/delete", s.handleImageDelete)
 
-		// Customer management
-		r.Get("/site/{id}/customers", s.handleCustomersList)
-		r.Get("/site/{id}/customers/{customerId}", s.handleCustomerDetail)
+			// Order management
+			r.Get("/orders", s.handleOrdersList)
+			r.Get("/orders/{orderId}", s.handleOrderDetail)
+			r.Get("/orders/{orderId}/packing-slip", s.handlePackingSlip)
+			r.Post("/orders/{orderId}/fulfillment", s.handleOrderFulfillmentUpdate)
+			r.Post("/orders/{orderId}/shipping/rates", s.handleShippingRates)
+			r.Post("/orders/{orderId}/shipping/purchase", s.handleShippingLabelPurchase)
 
+			// Customer management
+			r.Get("/customers", s.handleCustomersList)
+			r.Get("/customers/{customerId}", s.handleCustomerDetail)
 
-	// Messages (Contact Form)
-	r.Get("/site/{id}/messages", s.handleMessagesList)
-	r.Get("/site/{id}/messages/{messageId}", s.handleMessageDetail)
-	r.Post("/site/{id}/messages/{messageId}/reply", s.handleMessageReply)
-	r.Post("/site/{id}/messages/{messageId}/toggle-read", s.handleMessageToggleRead)
-	r.Post("/site/{id}/messages/{messageId}/delete", s.handleMessageDelete)
-		// SMS Signups (Marketing)
-		r.Get("/site/{id}/sms-signups", s.handleSMSSignupsList)
-		r.Post("/site/{id}/sms-signups/{signupId}/delete", s.handleDeleteSMSSignup)
-		r.Get("/site/{id}/sms-signups/export", s.handleExportSMSSignups)
+			// Messages (Contact Form)
+			r.Get("/messages", s.handleMessagesList)
+			r.Get("/messages/{messageId}", s.handleMessageDetail)
+			r.Post("/messages/{messageId}/reply", s.handleMessageReply)
+			r.Post("/messages/{messageId}/toggle-read", s.handleMessageToggleRead)
+			r.Post("/messages/{messageId}/delete", s.handleMessageDelete)
 
-		// SMS Campaigns (Marketing)
-		r.Get("/site/{id}/sms-campaigns", s.handleSMSCampaignForm)
-		r.Post("/site/{id}/sms-campaigns/send", s.handleSendBulkSMS)
+			// SMS Signups (Marketing)
+			r.Get("/sms-signups", s.handleSMSSignupsList)
+			r.Post("/sms-signups/{signupId}/delete", s.handleDeleteSMSSignup)
+			r.Get("/sms-signups/export", s.handleExportSMSSignups)
 
-		// Analytics
-		r.Get("/site/{id}/analytics", s.handleAnalytics)
+			// SMS Campaigns (Marketing)
+			r.Get("/sms-campaigns", s.handleSMSCampaignForm)
+			r.Post("/sms-campaigns/send", s.handleSendBulkSMS)
+
+			// Analytics
+			r.Get("/analytics", s.handleAnalytics)
+		})
 	})
 
 	// Static assets for admin UI

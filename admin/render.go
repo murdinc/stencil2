@@ -39,11 +39,38 @@ type LayoutData struct {
 
 // renderWithLayout renders a page using the layout template
 func (s *AdminServer) renderWithLayout(w http.ResponseWriter, r *http.Request, contentTemplate string, data map[string]interface{}) {
+	// Get current user from session
+	sessionID := getSession(r)
+	username := getSessionUsername(sessionID)
+	isAdminUser := isAdmin(username)
+
 	// Get all sites
-	sites, err := s.GetAllWebsites()
+	allSites, err := s.GetAllWebsites()
 	if err != nil {
 		log.Printf("Error loading websites: %v", err)
-		sites = []Website{}
+		allSites = []Website{}
+	}
+
+	// Filter sites based on user permissions
+	var sites []Website
+	if isAdminUser {
+		sites = allSites
+	} else {
+		allowedSiteIDs := s.getUserSiteAccess(username)
+		if allowedSiteIDs == nil {
+			// User has access to all sites
+			sites = allSites
+		} else {
+			// Filter to only allowed sites
+			for _, site := range allSites {
+				for _, allowedID := range allowedSiteIDs {
+					if site.DatabaseName == allowedID || site.ID == allowedID {
+						sites = append(sites, site)
+						break
+					}
+				}
+			}
+		}
 	}
 
 	// Get current site if ID is in URL
@@ -71,6 +98,8 @@ func (s *AdminServer) renderWithLayout(w http.ResponseWriter, r *http.Request, c
 		"AllSites":      layoutData.AllSites,
 		"CurrentSite":   layoutData.CurrentSite,
 		"ActiveSection": layoutData.ActiveSection,
+		"IsAdmin":       isAdminUser,
+		"Username":      username,
 	}
 	for k, v := range data {
 		finalData[k] = v

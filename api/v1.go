@@ -151,7 +151,9 @@ func (api *APIV1) initRoutesV1() {
 	api.addRoute("/api/v1/checkout", "POST", api.createOrder, "order")
 	api.addRoute("/api/v1/order/{orderNumber}", "GET", api.getOrder, "order")
 	api.addRoute("/api/v1/tracking/{carrier}/{trackingNumber}", "GET", api.getTracking, "tracking")
+	api.addRoute("/api/v1/webhook/stripe", "GET", api.webhookInfo, "webhook")
 	api.addRoute("/api/v1/webhook/stripe", "POST", api.handleStripeWebhook, "webhook")
+	api.addRoute("/api/v1/webhook/shippo", "GET", api.webhookInfo, "webhook")
 	api.addRoute("/api/v1/webhook/shippo", "POST", api.handleShippoWebhook, "webhook")
 
 	// Marketing
@@ -896,6 +898,12 @@ func (api *APIV1) createPaymentIntent(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonData)
 }
 
+// webhookInfo returns 200 OK for webhook endpoints when accessed via GET
+func (api *APIV1) webhookInfo(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
+}
+
 // handleStripeWebhook handles Stripe webhook events
 func (api *APIV1) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	const MaxBodyBytes = int64(65536)
@@ -1446,6 +1454,8 @@ func (api *APIV1) trackAnalytics(w http.ResponseWriter, r *http.Request) {
 		ScreenWidth  int                    `json:"sw"`
 		ScreenHeight int                    `json:"sh"`
 		DeviceType   string                 `json:"dt"`
+		PageviewID   int64                  `json:"pid"`
+		TimeOnPage   int                    `json:"top"`
 	}
 
 	err := json.NewDecoder(r.Body).Decode(&reqBody)
@@ -1465,15 +1475,33 @@ func (api *APIV1) trackAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Track based on type
-	if reqBody.EventType == "e" && reqBody.EventName != "" {
+	if reqBody.EventType == "u" {
+		// Time update for existing pageview
+		err = api.dbConn.UpdatePageViewTime(reqBody.PageviewID, reqBody.TimeOnPage)
+		if err != nil {
+			log.Printf("Failed to update time on page: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	} else if reqBody.EventType == "e" && reqBody.EventName != "" {
 		// Custom event
 		err = api.dbConn.TrackEvent(reqBody.VisitorID, reqBody.SessionID, reqBody.EventName, reqBody.Path, reqBody.EventData)
+		if err != nil {
+			log.Printf("Failed to track event: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
 	} else if reqBody.EventType == "h" {
 		// Heartbeat - track as event to update session activity
 		err = api.dbConn.TrackEvent(reqBody.VisitorID, reqBody.SessionID, "heartbeat", reqBody.Path, nil)
+		if err != nil {
+			log.Printf("Failed to track heartbeat: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
 	} else {
-		// Pageview (default)
-		err = api.dbConn.TrackPageView(
+		// Pageview (default) - return the pageview ID
+		pageviewID, err := api.dbConn.TrackPageView(
 			reqBody.VisitorID,
 			reqBody.SessionID,
 			reqBody.Path,
@@ -1483,14 +1511,18 @@ func (api *APIV1) trackAnalytics(w http.ResponseWriter, r *http.Request) {
 			reqBody.ScreenWidth,
 			reqBody.ScreenHeight,
 		)
-	}
+		if err != nil {
+			log.Printf("Failed to track pageview: %v", err)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 
-	if err != nil {
-		log.Printf("Failed to track analytics: %v", err)
+		// Return pageview ID for client to use in time updates
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"pageview_id": pageviewID,
+		})
 	}
-
-	// Always return 204 No Content for beacons (fast, no response body)
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // submitContactForm handles contact form submissions

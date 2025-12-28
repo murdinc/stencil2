@@ -24,6 +24,7 @@ type Website struct {
 	HTTPAddress   string    `json:"httpAddress"`
 	MediaProxyURL string    `json:"mediaProxyUrl"`
 	APIVersion    int       `json:"apiVersion"`
+	Timezone      string    `json:"timezone"` // IANA timezone (e.g., "America/Los_Angeles")
 
 	// Stripe
 	StripePublishableKey string `json:"stripePublishableKey"`
@@ -284,6 +285,7 @@ func (s *AdminServer) GetAllWebsites() ([]Website, error) {
 			var config struct {
 				SiteName      string `json:"siteName"`
 				APIVersion    int    `json:"apiVersion"`
+				Timezone      string `json:"timezone"`
 				Database      struct {
 					Name string `json:"name"`
 				} `json:"database"`
@@ -348,6 +350,11 @@ func (s *AdminServer) GetAllWebsites() ([]Website, error) {
 				return nil // Skip invalid JSON
 			}
 
+			// Default timezone to PST if not set
+			if config.Timezone == "" {
+				config.Timezone = "America/Los_Angeles"
+			}
+
 			// Extract directory (parent of config file)
 			dir := filepath.Dir(path)
 			relDir, _ := filepath.Rel("websites", dir)
@@ -360,6 +367,7 @@ func (s *AdminServer) GetAllWebsites() ([]Website, error) {
 				HTTPAddress:   config.HTTP.Address,
 				MediaProxyURL: config.MediaProxyURL,
 				APIVersion:    config.APIVersion,
+				Timezone:      config.Timezone,
 
 				StripePublishableKey: config.Stripe.PublishableKey,
 				StripeSecretKey:      config.Stripe.SecretKey,
@@ -471,6 +479,7 @@ func (s *AdminServer) UpdateWebsite(w Website) error {
 	// Update fields
 	config["siteName"] = w.SiteName
 	config["apiVersion"] = w.APIVersion
+	config["timezone"] = w.Timezone
 
 	if config["database"] == nil {
 		config["database"] = make(map[string]interface{})
@@ -626,6 +635,347 @@ func (s *AdminServer) GetWebsiteConnectionByDB(dbName string) (*sql.DB, error) {
 	}
 
 	return db, nil
+}
+
+// timezoneToOffset converts IANA timezone names to UTC offsets for MySQL
+func timezoneToOffset(tz string) string {
+	offsets := map[string]string{
+		"America/Los_Angeles": "-08:00", // PST (standard time)
+		"America/Denver":      "-07:00", // MST
+		"America/Chicago":     "-06:00", // CST
+		"America/New_York":    "-05:00", // EST
+		"America/Anchorage":   "-09:00", // AKST
+		"Pacific/Honolulu":    "-10:00", // HST
+		"UTC":                 "+00:00",
+	}
+	if offset, ok := offsets[tz]; ok {
+		return offset
+	}
+	return "-08:00" // Default to PST
+}
+
+// GetAnalyticsTimeSeries gets daily pageviews, unique visitors, and revenue for charting
+func (s *AdminServer) GetAnalyticsTimeSeries(websiteID string, startDate, endDate time.Time, timezone string) ([]map[string]interface{}, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	// Default to PST if no timezone specified
+	if timezone == "" {
+		timezone = "America/Los_Angeles"
+	}
+
+	// Convert timezone name to UTC offset for MySQL compatibility
+	offset := timezoneToOffset(timezone)
+
+	// Build query with dynamic timezone conversion
+	// Convert UTC timestamps to user's timezone before extracting dates
+	query := fmt.Sprintf(`
+		SELECT
+			DATE_FORMAT(dates.date, '%%Y-%%m-%%d') as date,
+			COALESCE(a.pageviews, 0) as pageviews,
+			COALESCE(a.visitors, 0) as visitors,
+			COALESCE(a.sessions, 0) as sessions,
+			COALESCE(o.revenue, 0) as revenue
+		FROM (
+			SELECT DISTINCT DATE(CONVERT_TZ(created_at, '+00:00', '%s')) as date
+			FROM analytics_pageviews
+			WHERE DATE(CONVERT_TZ(created_at, '+00:00', '%s')) BETWEEN DATE(?) AND DATE(?)
+			UNION
+			SELECT DISTINCT DATE(CONVERT_TZ(created_at, '+00:00', '%s')) as date
+			FROM orders
+			WHERE DATE(CONVERT_TZ(created_at, '+00:00', '%s')) BETWEEN DATE(?) AND DATE(?)
+		) dates
+		LEFT JOIN (
+			SELECT
+				DATE(CONVERT_TZ(created_at, '+00:00', '%s')) as date,
+				COUNT(*) as pageviews,
+				COUNT(DISTINCT visitor_id) as visitors,
+				COUNT(DISTINCT session_id) as sessions
+			FROM analytics_pageviews
+			WHERE DATE(CONVERT_TZ(created_at, '+00:00', '%s')) BETWEEN DATE(?) AND DATE(?)
+			GROUP BY DATE(CONVERT_TZ(created_at, '+00:00', '%s'))
+		) a ON dates.date = a.date
+		LEFT JOIN (
+			SELECT
+				DATE(CONVERT_TZ(created_at, '+00:00', '%s')) as date,
+				SUM(total) as revenue
+			FROM orders
+			WHERE payment_status = 'paid'
+				AND DATE(CONVERT_TZ(created_at, '+00:00', '%s')) BETWEEN DATE(?) AND DATE(?)
+			GROUP BY DATE(CONVERT_TZ(created_at, '+00:00', '%s'))
+		) o ON dates.date = o.date
+		ORDER BY dates.date ASC
+	`, offset, offset, offset, offset, offset, offset, offset, offset, offset, offset)
+
+	rows, err := db.Query(query, startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Create a map of actual data indexed by date
+	dataMap := make(map[string]map[string]interface{})
+	for rows.Next() {
+		var date string
+		var pageviews, visitors, sessions int
+		var revenue float64
+		err := rows.Scan(&date, &pageviews, &visitors, &sessions, &revenue)
+		if err != nil {
+			continue
+		}
+		dataMap[date] = map[string]interface{}{
+			"date":      date,
+			"pageviews": pageviews,
+			"visitors":  visitors,
+			"sessions":  sessions,
+			"revenue":   revenue,
+		}
+	}
+
+	// Generate complete date range with zeros for missing days
+	// Normalize to midnight for clean date iteration
+	start := time.Date(startDate.Year(), startDate.Month(), startDate.Day(), 0, 0, 0, 0, startDate.Location())
+	end := time.Date(endDate.Year(), endDate.Month(), endDate.Day(), 0, 0, 0, 0, endDate.Location())
+
+	var results []map[string]interface{}
+	currentDate := start
+	for !currentDate.After(end) {
+		dateStr := currentDate.Format("2006-01-02")
+
+		if data, exists := dataMap[dateStr]; exists {
+			// Use actual data
+			results = append(results, data)
+		} else {
+			// Fill with zeros
+			results = append(results, map[string]interface{}{
+				"date":      dateStr,
+				"pageviews": 0,
+				"visitors":  0,
+				"sessions":  0,
+				"revenue":   0.0,
+			})
+		}
+
+		currentDate = currentDate.AddDate(0, 0, 1)
+	}
+
+	return results, nil
+}
+
+// GetEngagementTimeSeries gets daily order count, avg pages per visit, and avg time on site
+func (s *AdminServer) GetEngagementTimeSeries(websiteID string, startDate, endDate time.Time, timezone string) ([]map[string]interface{}, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	// Default to PST if no timezone specified
+	if timezone == "" {
+		timezone = "America/Los_Angeles"
+	}
+
+	// Convert timezone name to UTC offset for MySQL compatibility
+	offset := timezoneToOffset(timezone)
+
+	// Query for engagement metrics
+	query := fmt.Sprintf(`
+		SELECT
+			DATE_FORMAT(dates.date, '%%Y-%%m-%%d') as date,
+			COALESCE(o.paid_orders, 0) as paid_orders,
+			COALESCE(o.pending_orders, 0) as pending_orders,
+			COALESCE(e.avg_pages_per_visit, 0) as avg_pages_per_visit,
+			COALESCE(e.avg_time_on_site, 0) as avg_time_on_site
+		FROM (
+			SELECT DISTINCT DATE(CONVERT_TZ(created_at, '+00:00', '%s')) as date
+			FROM analytics_pageviews
+			WHERE DATE(CONVERT_TZ(created_at, '+00:00', '%s')) BETWEEN DATE(?) AND DATE(?)
+			UNION
+			SELECT DISTINCT DATE(CONVERT_TZ(created_at, '+00:00', '%s')) as date
+			FROM orders
+			WHERE DATE(CONVERT_TZ(created_at, '+00:00', '%s')) BETWEEN DATE(?) AND DATE(?)
+		) dates
+		LEFT JOIN (
+			SELECT
+				DATE(CONVERT_TZ(created_at, '+00:00', '%s')) as date,
+				SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) as paid_orders,
+				SUM(CASE WHEN payment_status = 'pending' THEN 1 ELSE 0 END) as pending_orders
+			FROM orders
+			WHERE DATE(CONVERT_TZ(created_at, '+00:00', '%s')) BETWEEN DATE(?) AND DATE(?)
+			GROUP BY DATE(CONVERT_TZ(created_at, '+00:00', '%s'))
+		) o ON dates.date = o.date
+		LEFT JOIN (
+			SELECT
+				date,
+				ROUND(COUNT(*) / NULLIF(COUNT(DISTINCT session_id), 0), 2) as avg_pages_per_visit,
+				ROUND(AVG(total_time), 0) as avg_time_on_site
+			FROM (
+				SELECT
+					session_id,
+					DATE(CONVERT_TZ(created_at, '+00:00', '%s')) as date,
+					SUM(time_on_page) as total_time
+				FROM analytics_pageviews
+				WHERE DATE(CONVERT_TZ(created_at, '+00:00', '%s')) BETWEEN DATE(?) AND DATE(?)
+				GROUP BY session_id, DATE(CONVERT_TZ(created_at, '+00:00', '%s'))
+			) sessions
+			GROUP BY date
+		) e ON dates.date = e.date
+		ORDER BY dates.date ASC
+	`, offset, offset, offset, offset, offset, offset, offset, offset, offset, offset)
+
+	rows, err := db.Query(query, startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Create a map of actual data indexed by date
+	dataMap := make(map[string]map[string]interface{})
+	for rows.Next() {
+		var date string
+		var paidOrders, pendingOrders int
+		var avgPagesPerVisit, avgTimeOnSite float64
+		err := rows.Scan(&date, &paidOrders, &pendingOrders, &avgPagesPerVisit, &avgTimeOnSite)
+		if err != nil {
+			continue
+		}
+		dataMap[date] = map[string]interface{}{
+			"date":                date,
+			"paid_orders":         paidOrders,
+			"pending_orders":      pendingOrders,
+			"avg_pages_per_visit": avgPagesPerVisit,
+			"avg_time_on_site":    avgTimeOnSite,
+		}
+	}
+
+	// Generate complete date range with zeros for missing days
+	// Normalize to midnight for clean date iteration
+	start := time.Date(startDate.Year(), startDate.Month(), startDate.Day(), 0, 0, 0, 0, startDate.Location())
+	end := time.Date(endDate.Year(), endDate.Month(), endDate.Day(), 0, 0, 0, 0, endDate.Location())
+
+	var results []map[string]interface{}
+	currentDate := start
+	for !currentDate.After(end) {
+		dateStr := currentDate.Format("2006-01-02")
+
+		if data, exists := dataMap[dateStr]; exists {
+			// Use actual data
+			results = append(results, data)
+		} else {
+			// Fill with zeros
+			results = append(results, map[string]interface{}{
+				"date":                dateStr,
+				"paid_orders":         0,
+				"pending_orders":      0,
+				"avg_pages_per_visit": 0.0,
+				"avg_time_on_site":    0.0,
+			})
+		}
+
+		currentDate = currentDate.AddDate(0, 0, 1)
+	}
+
+	return results, nil
+}
+
+// GetGrowthTimeSeries gets daily new customers and SMS signups for charting
+func (s *AdminServer) GetGrowthTimeSeries(websiteID string, startDate, endDate time.Time, timezone string) ([]map[string]interface{}, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	// Default to PST if no timezone specified
+	if timezone == "" {
+		timezone = "America/Los_Angeles"
+	}
+
+	// Convert timezone name to UTC offset for MySQL compatibility
+	offset := timezoneToOffset(timezone)
+
+	// Query for growth metrics
+	query := fmt.Sprintf(`
+		SELECT
+			DATE_FORMAT(dates.date, '%%Y-%%m-%%d') as date,
+			COALESCE(c.new_customers, 0) as new_customers,
+			COALESCE(s.new_sms_signups, 0) as new_sms_signups
+		FROM (
+			SELECT DISTINCT DATE(CONVERT_TZ(created_at, '+00:00', '%s')) as date
+			FROM customers
+			WHERE DATE(CONVERT_TZ(created_at, '+00:00', '%s')) BETWEEN DATE(?) AND DATE(?)
+			UNION
+			SELECT DISTINCT DATE(CONVERT_TZ(created_at, '+00:00', '%s')) as date
+			FROM sms_signups
+			WHERE DATE(CONVERT_TZ(created_at, '+00:00', '%s')) BETWEEN DATE(?) AND DATE(?)
+		) dates
+		LEFT JOIN (
+			SELECT
+				DATE(CONVERT_TZ(created_at, '+00:00', '%s')) as date,
+				COUNT(*) as new_customers
+			FROM customers
+			WHERE DATE(CONVERT_TZ(created_at, '+00:00', '%s')) BETWEEN DATE(?) AND DATE(?)
+			GROUP BY DATE(CONVERT_TZ(created_at, '+00:00', '%s'))
+		) c ON dates.date = c.date
+		LEFT JOIN (
+			SELECT
+				DATE(CONVERT_TZ(created_at, '+00:00', '%s')) as date,
+				COUNT(*) as new_sms_signups
+			FROM sms_signups
+			WHERE DATE(CONVERT_TZ(created_at, '+00:00', '%s')) BETWEEN DATE(?) AND DATE(?)
+			GROUP BY DATE(CONVERT_TZ(created_at, '+00:00', '%s'))
+		) s ON dates.date = s.date
+		ORDER BY dates.date ASC
+	`, offset, offset, offset, offset, offset, offset, offset, offset, offset, offset)
+
+	rows, err := db.Query(query, startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Create a map of actual data indexed by date
+	dataMap := make(map[string]map[string]interface{})
+	for rows.Next() {
+		var date string
+		var newCustomers, newSMSSignups int
+		err := rows.Scan(&date, &newCustomers, &newSMSSignups)
+		if err != nil {
+			continue
+		}
+		dataMap[date] = map[string]interface{}{
+			"date":            date,
+			"new_customers":   newCustomers,
+			"new_sms_signups": newSMSSignups,
+		}
+	}
+
+	// Generate complete date range with zeros for missing days
+	start := time.Date(startDate.Year(), startDate.Month(), startDate.Day(), 0, 0, 0, 0, startDate.Location())
+	end := time.Date(endDate.Year(), endDate.Month(), endDate.Day(), 0, 0, 0, 0, endDate.Location())
+
+	var results []map[string]interface{}
+	currentDate := start
+	for !currentDate.After(end) {
+		dateStr := currentDate.Format("2006-01-02")
+
+		if data, exists := dataMap[dateStr]; exists {
+			results = append(results, data)
+		} else {
+			results = append(results, map[string]interface{}{
+				"date":            dateStr,
+				"new_customers":   0,
+				"new_sms_signups": 0,
+			})
+		}
+
+		currentDate = currentDate.AddDate(0, 0, 1)
+	}
+
+	return results, nil
 }
 
 // GetArticles retrieves articles for a specific website
@@ -2978,11 +3328,11 @@ func (s *AdminServer) GetAverageSessionDuration(websiteID string, startDate, end
 		FROM (
 			SELECT
 				session_id,
-				TIMESTAMPDIFF(SECOND, MIN(created_at), MAX(created_at)) as duration
+				SUM(time_on_page) as duration
 			FROM analytics_pageviews
 			WHERE created_at BETWEEN ? AND ?
 			GROUP BY session_id
-			HAVING COUNT(*) > 1
+			HAVING SUM(time_on_page) > 0
 		) as session_durations
 	`
 

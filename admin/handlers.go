@@ -70,15 +70,18 @@ func (s *AdminServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	username := r.FormValue("username")
 	password := r.FormValue("password")
-	if s.verifyPassword(password) {
-		s.createSession(w)
+
+	validUsername := s.verifyCredentials(username, password)
+	if validUsername != "" {
+		s.createSession(w, validUsername)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	s.renderTemplate(w, "login", map[string]interface{}{
-		"Error": "Invalid password",
+		"Error": "Invalid username or password",
 	})
 }
 
@@ -91,14 +94,59 @@ func (s *AdminServer) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 // handleDashboard renders the main dashboard (no site selected)
 func (s *AdminServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	sessionID := getSession(r)
+	username := getSessionUsername(sessionID)
+
+	// Get all websites the user has access to
+	allSites, err := s.GetAllWebsites()
+	if err != nil {
+		http.Error(w, "Error loading websites", http.StatusInternalServerError)
+		return
+	}
+
+	// Filter sites based on user permissions
+	var accessibleSites []Website
+	if isAdmin(username) {
+		accessibleSites = allSites
+	} else {
+		allowedSiteIDs := s.getUserSiteAccess(username)
+		if allowedSiteIDs == nil {
+			// User has access to all sites
+			accessibleSites = allSites
+		} else {
+			// Filter to only sites user has access to
+			for _, site := range allSites {
+				for _, allowedID := range allowedSiteIDs {
+					if site.DatabaseName == allowedID || site.ID == allowedID {
+						accessibleSites = append(accessibleSites, site)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// If user only has access to one site, redirect to it automatically
+	if len(accessibleSites) == 1 {
+		http.Redirect(w, r, "/site/"+accessibleSites[0].ID, http.StatusFound)
+		return
+	}
+
 	// Check if user has a last selected site in cookie
 	if cookie, err := r.Cookie("last_site"); err == nil && cookie.Value != "" {
-		// Verify the site still exists
-		if _, err := s.GetWebsite(cookie.Value); err == nil {
+		// Verify the site still exists and user has permission to access it
+		if _, err := s.GetWebsite(cookie.Value); err == nil && s.canAccessSite(username, cookie.Value) {
 			// Redirect to the last selected site
 			http.Redirect(w, r, "/site/"+cookie.Value, http.StatusFound)
 			return
 		}
+		// If site doesn't exist or user doesn't have access, clear the cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:   "last_site",
+			Value:  "",
+			Path:   "/",
+			MaxAge: -1, // Delete cookie
+		})
 	}
 
 	s.renderWithLayout(w, r, "dashboard_content.html", map[string]interface{}{
@@ -152,13 +200,40 @@ func (s *AdminServer) handleSiteDashboard(w http.ResponseWriter, r *http.Request
 		recentOrders = []RecentOrder{}
 	}
 
+	// Get time series data for chart (last 7 days for dashboard)
+	// Load user's configured timezone
+	loc, err := time.LoadLocation(site.Timezone)
+	if err != nil {
+		log.Printf("Error loading timezone %s: %v, defaulting to UTC", site.Timezone, err)
+		loc = time.UTC
+	}
+	now := time.Now().In(loc)
+	endDate := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, loc)
+	startDate := endDate.AddDate(0, 0, -6) // -6 to include today as the 7th day
+	timeSeriesData, err := s.GetAnalyticsTimeSeries(websiteID, startDate, endDate, site.Timezone)
+	if err != nil {
+		log.Printf("Error fetching time series data: %v", err)
+		timeSeriesData = []map[string]interface{}{}
+	}
+	timeSeriesJSON, _ := json.Marshal(timeSeriesData)
+
+	// Get engagement metrics
+	engagementData, err := s.GetEngagementTimeSeries(websiteID, startDate, endDate, site.Timezone)
+	if err != nil {
+		log.Printf("Error fetching engagement data: %v", err)
+		engagementData = []map[string]interface{}{}
+	}
+	engagementJSON, _ := json.Marshal(engagementData)
+
 	s.renderWithLayout(w, r, "overview_content.html", map[string]interface{}{
-		"Title":         site.SiteName + " - Overview",
-		"ActiveSection": "overview",
-		"Website":       site,
-		"Stats":         stats,
-		"ActiveUsers":   activeUsers,
-		"RecentOrders":  recentOrders,
+		"Title":           site.SiteName + " - Overview",
+		"ActiveSection":   "overview",
+		"Website":         site,
+		"Stats":           stats,
+		"ActiveUsers":     activeUsers,
+		"RecentOrders":    recentOrders,
+		"TimeSeriesJSON":  string(timeSeriesJSON),
+		"EngagementJSON":  string(engagementJSON),
 	})
 }
 
@@ -219,14 +294,21 @@ func (s *AdminServer) handleSiteSettingsUpdate(w http.ResponseWriter, r *http.Re
 		fmt.Sscanf(r.FormValue("smtpPort"), "%d", &smtpPort)
 	}
 
+	// Sanitize HTTP address - remove http://, https://, and trailing slashes
+	httpAddress := r.FormValue("httpAddress")
+	httpAddress = strings.TrimPrefix(httpAddress, "http://")
+	httpAddress = strings.TrimPrefix(httpAddress, "https://")
+	httpAddress = strings.TrimSuffix(httpAddress, "/")
+
 	website := Website{
 		ID:            websiteID,
 		SiteName:      r.FormValue("siteName"),
 		Directory:     existingWebsite.Directory,
 		DatabaseName:  r.FormValue("databaseName"),
-		HTTPAddress:   r.FormValue("httpAddress"),
+		HTTPAddress:   httpAddress,
 		MediaProxyURL: r.FormValue("mediaProxyUrl"),
 		APIVersion:    1,
+		Timezone:      r.FormValue("timezone"),
 
 		StripePublishableKey: r.FormValue("stripePublishableKey"),
 		StripeSecretKey:      r.FormValue("stripeSecretKey"),
@@ -300,15 +382,24 @@ func (s *AdminServer) handleWebhooks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Construct base URL for webhooks
-	baseURL := s.EnvConfig.BaseURL
+	// Use the site's specific HTTP address for webhooks
+	baseURL := site.HTTPAddress
 	if baseURL == "" {
-		// Fallback to request host if base URL not configured
+		// Fallback to request host if address not configured
 		scheme := "https"
 		if !s.EnvConfig.ProdMode {
 			scheme = "http"
 		}
 		baseURL = fmt.Sprintf("%s://%s", scheme, r.Host)
+	}
+
+	// Ensure it has the scheme prefix
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		scheme := "https"
+		if !s.EnvConfig.ProdMode {
+			scheme = "http"
+		}
+		baseURL = fmt.Sprintf("%s://%s", scheme, baseURL)
 	}
 
 	s.renderWithLayout(w, r, "webhooks_content.html", map[string]interface{}{
@@ -355,6 +446,46 @@ func (s *AdminServer) handleSuperadmin(w http.ResponseWriter, r *http.Request) {
 		"Title":         "Superadmin Console",
 		"ActiveSection": "superadmin",
 		"Websites":      websites,
+	})
+}
+
+// handleSuperadminCheckup renders the configuration checkup page
+func (s *AdminServer) handleSuperadminCheckup(w http.ResponseWriter, r *http.Request) {
+	websites, err := s.GetAllWebsites()
+	if err != nil {
+		log.Printf("Error loading websites: %v", err)
+		websites = []Website{}
+	}
+
+	// Build checkup data for each website
+	type CheckupItem struct {
+		Website          Website
+		HasHTTPAddress   bool
+		HasStripeKeys    bool
+		HasShippoKey     bool
+		HasTwilioKeys    bool
+		HasEmailConfig   bool
+		HasShipFrom      bool
+	}
+
+	var checkups []CheckupItem
+	for _, site := range websites {
+		checkup := CheckupItem{
+			Website:          site,
+			HasHTTPAddress:   site.HTTPAddress != "",
+			HasStripeKeys:    site.StripePublishableKey != "" && site.StripeSecretKey != "",
+			HasShippoKey:     site.ShippoAPIKey != "",
+			HasTwilioKeys:    site.TwilioAccountSID != "" && site.TwilioAuthToken != "" && site.TwilioFromPhone != "",
+			HasEmailConfig:   site.EmailFromAddress != "" && site.EmailFromName != "" && site.SMTPUsername != "" && site.SMTPPassword != "",
+			HasShipFrom:      site.ShipFromName != "" && site.ShipFromStreet1 != "" && site.ShipFromCity != "" && site.ShipFromState != "" && site.ShipFromZip != "",
+		}
+		checkups = append(checkups, checkup)
+	}
+
+	s.renderWithLayout(w, r, "superadmin_checkup_content.html", map[string]interface{}{
+		"Title":         "Configuration Checkup",
+		"ActiveSection": "superadmin-checkup",
+		"Checkups":      checkups,
 	})
 }
 
@@ -478,6 +609,180 @@ func (s *AdminServer) handleSuperadminWebsiteCreate(w http.ResponseWriter, r *ht
 	s.LogActivity("create", "website", 0, website.DatabaseName, website)
 
 	http.Redirect(w, r, "/superadmin", http.StatusSeeOther)
+}
+
+// handleSuperadminUsers renders the user management page
+func (s *AdminServer) handleSuperadminUsers(w http.ResponseWriter, r *http.Request) {
+	websites, err := s.GetAllWebsites()
+	if err != nil {
+		log.Printf("Error loading websites: %v", err)
+		websites = []Website{}
+	}
+
+	s.renderWithLayout(w, r, "superadmin_users_content.html", map[string]interface{}{
+		"Title":         "User Management",
+		"ActiveSection": "superadmin-users",
+		"Websites":      websites,
+		"Users":         s.EnvConfig.Admin.Users,
+	})
+}
+
+// handleSuperadminUserCreate creates a new user
+func (s *AdminServer) handleSuperadminUserCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+	allSites := r.FormValue("allSites") == "true"
+	siteIds := r.Form["siteIds"]
+
+	// Validate username
+	if username == "" || username == "admin" {
+		http.Error(w, "Invalid username", http.StatusBadRequest)
+		return
+	}
+
+	// Check if user already exists
+	for _, user := range s.EnvConfig.Admin.Users {
+		if user.Username == username {
+			http.Error(w, "User already exists", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Hash password
+	passwordHash := hashPassword(password)
+
+	// Create new user
+	newUser := configs.AdminUser{
+		Username:     username,
+		PasswordHash: passwordHash,
+		AllSites:     allSites,
+		SiteIDs:      siteIds,
+	}
+
+	// Add to config
+	s.EnvConfig.Admin.Users = append(s.EnvConfig.Admin.Users, newUser)
+
+	// Save config file
+	if err := s.saveEnvironmentConfig(); err != nil {
+		http.Error(w, fmt.Sprintf("Error saving config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.LogActivity("create", "user", 0, username, newUser)
+
+	http.Redirect(w, r, "/superadmin/users", http.StatusSeeOther)
+}
+
+// handleSuperadminUserUpdate updates a user's permissions and optionally resets password
+func (s *AdminServer) handleSuperadminUserUpdate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	username := r.FormValue("username")
+	newPassword := r.FormValue("password") // Optional - only reset if provided
+	allSites := r.FormValue("allSites") == "true"
+	siteIds := r.Form["siteIds"]
+
+	// Find and update user
+	found := false
+	for i, user := range s.EnvConfig.Admin.Users {
+		if user.Username == username {
+			// Update permissions
+			s.EnvConfig.Admin.Users[i].AllSites = allSites
+			s.EnvConfig.Admin.Users[i].SiteIDs = siteIds
+
+			// Update password if provided
+			if newPassword != "" {
+				s.EnvConfig.Admin.Users[i].PasswordHash = hashPassword(newPassword)
+			}
+
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Save config file
+	if err := s.saveEnvironmentConfig(); err != nil {
+		http.Error(w, fmt.Sprintf("Error saving config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.LogActivity("update", "user", 0, username, nil)
+
+	http.Redirect(w, r, "/superadmin/users", http.StatusSeeOther)
+}
+
+// handleSuperadminUserDelete deletes a user
+func (s *AdminServer) handleSuperadminUserDelete(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	username := r.FormValue("username")
+
+	// Remove user from config
+	var newUsers []configs.AdminUser
+	found := false
+	for _, user := range s.EnvConfig.Admin.Users {
+		if user.Username != username {
+			newUsers = append(newUsers, user)
+		} else {
+			found = true
+		}
+	}
+
+	if !found {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	s.EnvConfig.Admin.Users = newUsers
+
+	// Save config file
+	if err := s.saveEnvironmentConfig(); err != nil {
+		http.Error(w, fmt.Sprintf("Error saving config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.LogActivity("delete", "user", 0, username, nil)
+
+	http.Redirect(w, r, "/superadmin/users", http.StatusSeeOther)
+}
+
+// saveEnvironmentConfig saves the environment config to the appropriate file
+func (s *AdminServer) saveEnvironmentConfig() error {
+	configName := "env-dev.json"
+	if s.EnvConfig.ProdMode {
+		configName = "env-prod.json"
+	}
+
+	configPath := filepath.Join("websites", configName)
+
+	// Marshal config to JSON
+	configData, err := json.MarshalIndent(s.EnvConfig, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %v", err)
+	}
+
+	// Write to file
+	if err := os.WriteFile(configPath, configData, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %v", err)
+	}
+
+	return nil
 }
 
 // handleWebsiteCreate creates a new website
@@ -2848,8 +3153,16 @@ func (s *AdminServer) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	endDate := time.Now()
-	startDate := endDate.AddDate(0, 0, -days)
+	// Set endDate to end of today to include all of today's data
+	// Load user's configured timezone
+	loc, err := time.LoadLocation(website.Timezone)
+	if err != nil {
+		log.Printf("Error loading timezone %s: %v, defaulting to UTC", website.Timezone, err)
+		loc = time.UTC
+	}
+	now := time.Now().In(loc)
+	endDate := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, loc)
+	startDate := endDate.AddDate(0, 0, -days+1)
 
 	// Get analytics data
 	stats, err := s.GetPageViewStats(websiteID, startDate, endDate)
@@ -2961,6 +3274,32 @@ func (s *AdminServer) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 		hasOrders = true
 	}
 
+	// Get time series data for charts
+	timeSeriesData, err := s.GetAnalyticsTimeSeries(websiteID, startDate, endDate, website.Timezone)
+	if err != nil {
+		log.Printf("Error fetching time series data: %v", err)
+		timeSeriesData = []map[string]interface{}{}
+	}
+
+	// Get engagement metrics
+	engagementData, err := s.GetEngagementTimeSeries(websiteID, startDate, endDate, website.Timezone)
+	if err != nil {
+		log.Printf("Error fetching engagement data: %v", err)
+		engagementData = []map[string]interface{}{}
+	}
+
+	// Get growth metrics
+	growthData, err := s.GetGrowthTimeSeries(websiteID, startDate, endDate, website.Timezone)
+	if err != nil {
+		log.Printf("Error fetching growth data: %v", err)
+		growthData = []map[string]interface{}{}
+	}
+
+	// Convert time series to JSON for Chart.js
+	timeSeriesJSON, _ := json.Marshal(timeSeriesData)
+	engagementJSON, _ := json.Marshal(engagementData)
+	growthJSON, _ := json.Marshal(growthData)
+
 	allSites, _ := s.GetAllWebsites()
 
 	data := map[string]interface{}{
@@ -2993,6 +3332,9 @@ func (s *AdminServer) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 		"TotalCarts":              totalCarts,
 		"RevenueMetrics":          revenueMetrics,
 		"HasOrders":               hasOrders,
+		"TimeSeriesJSON":          string(timeSeriesJSON),
+		"EngagementJSON":          string(engagementJSON),
+		"GrowthJSON":              string(growthJSON),
 	}
 
 	s.renderWithLayout(w, r, "analytics_content.html", data)

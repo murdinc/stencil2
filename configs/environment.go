@@ -8,6 +8,13 @@ import (
 	"path/filepath"
 )
 
+type AdminUser struct {
+	Username     string   `json:"username"`
+	PasswordHash string   `json:"passwordHash"`
+	AllSites     bool     `json:"allSites"`     // If true, user has access to all sites
+	SiteIDs      []string `json:"siteIds"`      // If AllSites is false, this lists the specific site IDs (database names) they can access
+}
+
 type EnvironmentConfig struct {
 	ProdMode   bool
 	HideErrors bool
@@ -25,10 +32,11 @@ type EnvironmentConfig struct {
 	Admin struct {
 		Enabled  bool   `json:"enabled"`
 		Port     string `json:"port"`
-		Password string `json:"password"`
+		Password string `json:"password"` // Password for the main "admin" user
 		Database struct {
 			Name string `json:"name"`
 		} `json:"database"`
+		Users []AdminUser `json:"users"` // Additional users with limited permissions
 	} `json:"admin"`
 	Email struct {
 		Admin struct {

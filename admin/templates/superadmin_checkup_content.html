@@ -1,0 +1,222 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>Configuration Checkup</h2>
+    <p>Review configuration status across all websites</p>
+</div>
+
+{{if .Checkups}}
+<div class="card">
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th style="min-width: 180px;">Website</th>
+                    <th style="text-align: center; width: 100px;">HTTP Address</th>
+                    <th style="text-align: center; width: 100px;">Stripe Keys</th>
+                    <th style="text-align: center; width: 100px;">Shippo Key</th>
+                    <th style="text-align: center; width: 100px;">Twilio Keys</th>
+                    <th style="text-align: center; width: 100px;">Email Config</th>
+                    <th style="text-align: center; width: 100px;">Ship From</th>
+                    <th style="text-align: center; width: 120px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Checkups}}
+                <tr>
+                    <td>
+                        <strong>{{.Website.SiteName}}</strong>
+                        <br>
+                        <code style="font-size: 11px; color: #666;">{{.Website.DatabaseName}}</code>
+                    </td>
+                    <td style="text-align: center; font-size: 20px;">
+                        <a href="/site/{{.Website.ID}}/settings#http-address" style="text-decoration: none;">
+                        {{if .HasHTTPAddress}}
+                        <span class="tooltip" style="color: #48bb78;">✓
+                            <span class="tooltiptext">Address: {{.Website.HTTPAddress}}</span>
+                        </span>
+                        {{else}}
+                        <span class="tooltip" style="color: #cbd5e0;">—
+                            <span class="tooltiptext">Not configured</span>
+                        </span>
+                        {{end}}
+                        </a>
+                    </td>
+                    <td style="text-align: center; font-size: 20px;">
+                        <a href="/site/{{.Website.ID}}/settings#stripe" style="text-decoration: none;">
+                        {{if .HasStripeKeys}}
+                        <span class="tooltip" style="color: #48bb78;">✓
+                            <span class="tooltiptext">Publishable: {{.Website.StripePublishableKey}}
+Secret: {{.Website.StripeSecretKey}}</span>
+                        </span>
+                        {{else}}
+                        <span class="tooltip" style="color: #cbd5e0;">—
+                            <span class="tooltiptext">Publishable: {{if .Website.StripePublishableKey}}{{.Website.StripePublishableKey}}{{else}}(empty){{end}}
+Secret: {{if .Website.StripeSecretKey}}{{.Website.StripeSecretKey}}{{else}}(empty){{end}}</span>
+                        </span>
+                        {{end}}
+                        </a>
+                    </td>
+                    <td style="text-align: center; font-size: 20px;">
+                        <a href="/site/{{.Website.ID}}/settings#shippo" style="text-decoration: none;">
+                        {{if .HasShippoKey}}
+                        <span class="tooltip" style="color: #48bb78;">✓
+                            <span class="tooltiptext">Key: {{.Website.ShippoAPIKey}}</span>
+                        </span>
+                        {{else}}
+                        <span class="tooltip" style="color: #cbd5e0;">—
+                            <span class="tooltiptext">{{if .Website.ShippoAPIKey}}{{.Website.ShippoAPIKey}}{{else}}Not configured{{end}}</span>
+                        </span>
+                        {{end}}
+                        </a>
+                    </td>
+                    <td style="text-align: center; font-size: 20px;">
+                        <a href="/site/{{.Website.ID}}/settings#twilio" style="text-decoration: none;">
+                        {{if .HasTwilioKeys}}
+                        <span class="tooltip" style="color: #48bb78;">✓
+                            <span class="tooltiptext">Account SID: {{.Website.TwilioAccountSID}}
+Auth Token: {{.Website.TwilioAuthToken}}
+From Phone: {{.Website.TwilioFromPhone}}</span>
+                        </span>
+                        {{else}}
+                        <span class="tooltip" style="color: #cbd5e0;">—
+                            <span class="tooltiptext">Account SID: {{if .Website.TwilioAccountSID}}{{.Website.TwilioAccountSID}}{{else}}(empty){{end}}
+Auth Token: {{if .Website.TwilioAuthToken}}{{.Website.TwilioAuthToken}}{{else}}(empty){{end}}
+From Phone: {{if .Website.TwilioFromPhone}}{{.Website.TwilioFromPhone}}{{else}}(empty){{end}}</span>
+                        </span>
+                        {{end}}
+                        </a>
+                    </td>
+                    <td style="text-align: center; font-size: 20px;">
+                        <a href="/site/{{.Website.ID}}/settings#email" style="text-decoration: none;">
+                        {{if .HasEmailConfig}}
+                        <span class="tooltip" style="color: #48bb78;">✓
+                            <span class="tooltiptext">From: {{.Website.EmailFromName}} <{{.Website.EmailFromAddress}}>
+SMTP User: {{.Website.SMTPUsername}}
+SMTP Pass: {{.Website.SMTPPassword}}</span>
+                        </span>
+                        {{else}}
+                        <span class="tooltip" style="color: #cbd5e0;">—
+                            <span class="tooltiptext">From Name: {{if .Website.EmailFromName}}{{.Website.EmailFromName}}{{else}}(empty){{end}}
+From Address: {{if .Website.EmailFromAddress}}{{.Website.EmailFromAddress}}{{else}}(empty){{end}}
+SMTP User: {{if .Website.SMTPUsername}}{{.Website.SMTPUsername}}{{else}}(empty){{end}}
+SMTP Pass: {{if .Website.SMTPPassword}}{{.Website.SMTPPassword}}{{else}}(empty){{end}}</span>
+                        </span>
+                        {{end}}
+                        </a>
+                    </td>
+                    <td style="text-align: center; font-size: 20px;">
+                        <a href="/site/{{.Website.ID}}/settings#ship-from" style="text-decoration: none;">
+                        {{if .HasShipFrom}}
+                        <span class="tooltip" style="color: #48bb78;">✓
+                            <span class="tooltiptext">{{.Website.ShipFromName}}
+{{.Website.ShipFromStreet1}}{{if .Website.ShipFromStreet2}}
+{{.Website.ShipFromStreet2}}{{end}}
+{{.Website.ShipFromCity}}, {{.Website.ShipFromState}} {{.Website.ShipFromZip}}
+{{.Website.ShipFromCountry}}</span>
+                        </span>
+                        {{else}}
+                        <span class="tooltip" style="color: #cbd5e0;">—
+                            <span class="tooltiptext">Name: {{if .Website.ShipFromName}}{{.Website.ShipFromName}}{{else}}(empty){{end}}
+Street: {{if .Website.ShipFromStreet1}}{{.Website.ShipFromStreet1}}{{else}}(empty){{end}}
+City: {{if .Website.ShipFromCity}}{{.Website.ShipFromCity}}{{else}}(empty){{end}}
+State: {{if .Website.ShipFromState}}{{.Website.ShipFromState}}{{else}}(empty){{end}}
+Zip: {{if .Website.ShipFromZip}}{{.Website.ShipFromZip}}{{else}}(empty){{end}}</span>
+                        </span>
+                        {{end}}
+                        </a>
+                    </td>
+                    <td style="text-align: center;">
+                        <a href="/site/{{.Website.ID}}/settings" class="btn btn-sm">Settings</a>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card" style="background: #f8f9fa; border: 2px solid #e1e8ed;">
+    <h3 style="margin: 0 0 12px 0;">Legend</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; font-size: 14px;">
+        <div>
+            <span style="color: #48bb78; font-size: 18px;">✓</span>
+            <strong>Configured</strong> - Setting is present
+        </div>
+        <div>
+            <span style="color: #cbd5e0; font-size: 18px;">—</span>
+            <strong>Missing</strong> - Setting needs configuration
+        </div>
+    </div>
+</div>
+{{else}}
+<div class="empty-state">
+    <h3>No websites found</h3>
+    <p>Create a website to get started</p>
+    <a href="/superadmin/websites/new" class="btn btn-success">Create New Website</a>
+</div>
+{{end}}
+
+<style>
+    table {
+        font-size: 14px;
+    }
+    th {
+        white-space: nowrap;
+    }
+    td code {
+        display: inline-block;
+        margin-top: 4px;
+    }
+
+    /* Custom tooltips */
+    .tooltip {
+        position: relative;
+        cursor: pointer;
+    }
+
+    .tooltip .tooltiptext {
+        visibility: hidden;
+        background-color: #2d3748;
+        color: #fff;
+        text-align: left;
+        padding: 10px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        line-height: 1.5;
+        white-space: pre-line;
+
+        /* Position */
+        position: absolute;
+        z-index: 1000;
+        bottom: 125%;
+        left: 50%;
+        transform: translateX(-50%);
+        min-width: 200px;
+        max-width: 400px;
+
+        /* Shadow */
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+
+        /* Fade in animation */
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+
+    /* Arrow */
+    .tooltip .tooltiptext::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -5px;
+        border-width: 5px;
+        border-style: solid;
+        border-color: #2d3748 transparent transparent transparent;
+    }
+
+    .tooltip:hover .tooltiptext {
+        visibility: visible;
+        opacity: 1;
+    }
+</style>
+{{end}}

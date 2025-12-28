@@ -8,7 +8,7 @@
 </div>
 
 <form method="POST" action="/site/{{.Website.ID}}/settings" id="settingsForm">
-    <div class="card">
+    <div class="card" id="http-address">
         <h3>Basic Information</h3>
         <div class="form-group">
             <label>Site Name:</label>
@@ -28,6 +28,20 @@
         <div class="form-group">
             <label>Media Proxy URL:</label>
             <input type="text" name="mediaProxyUrl" value="{{.Website.MediaProxyURL}}" placeholder="https://example.com">
+        </div>
+
+        <div class="form-group">
+            <label>Timezone:</label>
+            <select name="timezone" required>
+                <option value="America/Los_Angeles" {{if eq .Website.Timezone "America/Los_Angeles"}}selected{{end}}>Pacific Time (PST/PDT)</option>
+                <option value="America/Denver" {{if eq .Website.Timezone "America/Denver"}}selected{{end}}>Mountain Time (MST/MDT)</option>
+                <option value="America/Chicago" {{if eq .Website.Timezone "America/Chicago"}}selected{{end}}>Central Time (CST/CDT)</option>
+                <option value="America/New_York" {{if eq .Website.Timezone "America/New_York"}}selected{{end}}>Eastern Time (EST/EDT)</option>
+                <option value="America/Anchorage" {{if eq .Website.Timezone "America/Anchorage"}}selected{{end}}>Alaska Time (AKST/AKDT)</option>
+                <option value="Pacific/Honolulu" {{if eq .Website.Timezone "Pacific/Honolulu"}}selected{{end}}>Hawaii Time (HST)</option>
+                <option value="UTC" {{if eq .Website.Timezone "UTC"}}selected{{end}}>UTC</option>
+            </select>
+            <small style="color: #7f8c8d; display: block; margin-top: 4px;">Used for analytics and date/time display</small>
         </div>
     </div>
 
@@ -50,7 +64,7 @@
         </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="stripe">
         <h3>Stripe Payment Settings</h3>
         <p style="color: #7f8c8d; margin-bottom: 16px;">Configure Stripe payment processing for this site.</p>
 
@@ -67,7 +81,7 @@
         </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="shippo">
         <h3>Shippo Shipping Settings</h3>
         <p style="color: #7f8c8d; margin-bottom: 16px;">Configure Shippo for shipping rates and label generation.</p>
 
@@ -102,7 +116,7 @@
         </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="twilio">
         <h3>Twilio SMS Settings</h3>
         <p style="color: #7f8c8d; margin-bottom: 16px;">Configure Twilio for SMS verification and bulk messaging.</p>
 
@@ -125,7 +139,7 @@
         </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="email">
         <h3>Email Settings</h3>
         <p style="color: #7f8c8d; margin-bottom: 16px;">Configure email for sending and receiving messages. For Gmail, create an App Password in your Google Account settings.</p>
 
@@ -197,7 +211,7 @@
         </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="ship-from">
         <h3>Ship From Address</h3>
         <p style="color: #7f8c8d; margin-bottom: 16px;">This address is used for calculating shipping rates and generating labels.</p>
 

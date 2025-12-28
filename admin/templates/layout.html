@@ -339,7 +339,7 @@
     <div class="header">
         <div class="header-left">
             <h1>stencil</h1>
-            {{if ne .ActiveSection "superadmin"}}{{if ne .ActiveSection "superadmin-website-new"}}{{if ne .ActiveSection "superadmin-users"}}
+            {{if ne .ActiveSection "superadmin"}}{{if ne .ActiveSection "superadmin-checkup"}}{{if ne .ActiveSection "superadmin-website-new"}}{{if ne .ActiveSection "superadmin-users"}}
             <select id="site-selector" class="site-selector" onchange="switchSite()">
                 <option value="">Select a site...</option>
                 {{range .AllSites}}
@@ -348,13 +348,15 @@
                 </option>
                 {{end}}
             </select>
-            {{end}}{{end}}{{end}}
+            {{end}}{{end}}{{end}}{{end}}
         </div>
         <div class="header-right">
-            {{if or (eq .ActiveSection "superadmin") (eq .ActiveSection "superadmin-website-new") (eq .ActiveSection "superadmin-users")}}
+            {{if .IsAdmin}}
+            {{if or (eq .ActiveSection "superadmin") (eq .ActiveSection "superadmin-checkup") (eq .ActiveSection "superadmin-website-new") (eq .ActiveSection "superadmin-users")}}
             <a href="/" class="header-btn active">Superadmin</a>
             {{else}}
             <a href="/superadmin" class="header-btn">Superadmin</a>
+            {{end}}
             {{end}}
             <a href="/logout">Logout</a>
         </div>
@@ -362,16 +364,17 @@
 
     <!-- Sidebar -->
     <div class="sidebar">
-        {{if or (eq .ActiveSection "superadmin") (eq .ActiveSection "superadmin-website-new") (eq .ActiveSection "superadmin-users")}}
+        {{if or (eq .ActiveSection "superadmin") (eq .ActiveSection "superadmin-checkup") (eq .ActiveSection "superadmin-website-new") (eq .ActiveSection "superadmin-users")}}
         <!-- Superadmin Console Sidebar -->
         <div class="sidebar-section">
             <h3>Superadmin Console</h3>
             <a href="/superadmin" class="sidebar-link {{if eq .ActiveSection "superadmin"}}active{{end}}">Dashboard</a>
+            <a href="/superadmin/checkup" class="sidebar-link {{if eq .ActiveSection "superadmin-checkup"}}active{{end}}">Config Checkup</a>
         </div>
         <div class="sidebar-section">
             <h3>Manage</h3>
             <a href="/superadmin/websites/new" class="sidebar-link {{if eq .ActiveSection "superadmin-website-new"}}active{{end}}">New Website</a>
-            <a href="/superadmin/users" class="sidebar-link {{if eq .ActiveSection "superadmin-users"}}active{{end}}" style="opacity: 0.5; cursor: not-allowed;">User Management (Coming Soon)</a>
+            <a href="/superadmin/users" class="sidebar-link {{if eq .ActiveSection "superadmin-users"}}active{{end}}">User Management</a>
         </div>
         {{else if .CurrentSite}}
         <!-- Regular Site Sidebar -->

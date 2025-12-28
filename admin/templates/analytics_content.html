@@ -56,6 +56,41 @@
     </div>
 </div>
 
+<!-- Traffic Chart -->
+<div class="card" style="margin-bottom: 30px;">
+    <h3 style="margin-bottom: 20px;">Traffic & Revenue</h3>
+    <div style="position: relative; height: 300px;">
+        <canvas id="trafficChart"></canvas>
+    </div>
+</div>
+
+<!-- Orders & Engagement Charts -->
+<div class="card" style="margin-bottom: 30px;">
+    <h3 style="margin-bottom: 20px;">Orders & Engagement</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div>
+            <h4 style="font-size: 14px; color: #666; margin-bottom: 10px; font-weight: normal;">Order Count</h4>
+            <div style="position: relative; height: 200px;">
+                <canvas id="ordersChart"></canvas>
+            </div>
+        </div>
+        <div>
+            <h4 style="font-size: 14px; color: #666; margin-bottom: 10px; font-weight: normal;">Engagement Metrics</h4>
+            <div style="position: relative; height: 200px;">
+                <canvas id="engagementChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Growth Metrics -->
+<div class="card" style="margin-bottom: 30px;">
+    <h3 style="margin-bottom: 20px;">Growth</h3>
+    <div style="position: relative; height: 250px;">
+        <canvas id="growthChart"></canvas>
+    </div>
+</div>
+
 <!-- E-Commerce Metrics -->
 {{if .HasOrders}}
 <div class="card" style="margin-bottom: 30px;">
@@ -277,5 +312,548 @@
     </table>
 </div>
 {{end}}
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// Parse time series data from server
+const timeSeriesData = JSON.parse({{.TimeSeriesJSON}});
+
+// Prepare chart data
+const labels = timeSeriesData.map(d => d.date);
+const pageviews = timeSeriesData.map(d => d.pageviews);
+const visitors = timeSeriesData.map(d => d.visitors);
+const revenue = timeSeriesData.map(d => d.revenue);
+
+// Create gradient for pageviews
+const ctx = document.getElementById('trafficChart').getContext('2d');
+const pageviewsGradient = ctx.createLinearGradient(0, 0, 0, 300);
+pageviewsGradient.addColorStop(0, 'rgba(37, 99, 235, 0.2)');
+pageviewsGradient.addColorStop(1, 'rgba(37, 99, 235, 0.0)');
+
+const visitorsGradient = ctx.createLinearGradient(0, 0, 0, 300);
+visitorsGradient.addColorStop(0, 'rgba(72, 187, 120, 0.2)');
+visitorsGradient.addColorStop(1, 'rgba(72, 187, 120, 0.0)');
+
+const revenueGradient = ctx.createLinearGradient(0, 0, 0, 300);
+revenueGradient.addColorStop(0, 'rgba(245, 158, 11, 0.2)');
+revenueGradient.addColorStop(1, 'rgba(245, 158, 11, 0.0)');
+
+// Initialize chart
+new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [{
+            label: 'Pageviews',
+            data: pageviews,
+            borderColor: '#2563eb',
+            backgroundColor: pageviewsGradient,
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4,
+            pointRadius: 3,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#2563eb',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2,
+            yAxisID: 'y'
+        }, {
+            label: 'Unique Visitors',
+            data: visitors,
+            borderColor: '#48bb78',
+            backgroundColor: visitorsGradient,
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4,
+            pointRadius: 3,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#48bb78',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2,
+            yAxisID: 'y'
+        }, {
+            label: 'Revenue ($)',
+            data: revenue,
+            borderColor: '#f59e0b',
+            backgroundColor: revenueGradient,
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4,
+            pointRadius: 3,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#f59e0b',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2,
+            yAxisID: 'y1'
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+            mode: 'index',
+            intersect: false,
+        },
+        plugins: {
+            legend: {
+                display: true,
+                position: 'top',
+                labels: {
+                    usePointStyle: true,
+                    padding: 20,
+                    font: {
+                        size: 13,
+                        weight: '500'
+                    }
+                }
+            },
+            tooltip: {
+                backgroundColor: '#1f2937',
+                titleColor: '#fff',
+                bodyColor: '#d1d5db',
+                borderColor: '#374151',
+                borderWidth: 1,
+                padding: 12,
+                displayColors: true,
+                callbacks: {
+                    title: function(context) {
+                        const dateStr = context[0].label;
+                        const [year, month, day] = dateStr.split('-');
+                        const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                        return date.toLocaleDateString('en-US', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric'
+                        });
+                    }
+                }
+            }
+        },
+        scales: {
+            y: {
+                type: 'linear',
+                display: true,
+                position: 'left',
+                beginAtZero: true,
+                ticks: {
+                    precision: 0,
+                    font: {
+                        size: 12
+                    },
+                    color: '#6b7280'
+                },
+                grid: {
+                    color: '#f3f4f6',
+                    drawBorder: false
+                },
+                title: {
+                    display: true,
+                    text: 'Views / Visitors',
+                    color: '#6b7280',
+                    font: {
+                        size: 11,
+                        weight: '600'
+                    }
+                }
+            },
+            y1: {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                beginAtZero: true,
+                ticks: {
+                    precision: 2,
+                    font: {
+                        size: 12
+                    },
+                    color: '#f59e0b',
+                    callback: function(value) {
+                        return '$' + value.toFixed(2);
+                    }
+                },
+                grid: {
+                    drawOnChartArea: false,
+                    drawBorder: false
+                },
+                title: {
+                    display: true,
+                    text: 'Revenue',
+                    color: '#f59e0b',
+                    font: {
+                        size: 11,
+                        weight: '600'
+                    }
+                }
+            },
+            x: {
+                ticks: {
+                    maxRotation: 0,
+                    autoSkip: true,
+                    maxTicksLimit: 10,
+                    font: {
+                        size: 11
+                    },
+                    color: '#6b7280',
+                    callback: function(value, index) {
+                        const dateStr = this.getLabelForValue(value);
+                        const [year, month, day] = dateStr.split('-');
+                        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                        return monthNames[parseInt(month) - 1] + ' ' + parseInt(day);
+                    }
+                },
+                grid: {
+                    display: false
+                }
+            }
+        }
+    }
+});
+
+// Parse engagement data
+const engagementData = JSON.parse({{.EngagementJSON}});
+const paidOrders = engagementData.map(d => d.paid_orders);
+const pendingOrders = engagementData.map(d => d.pending_orders);
+const avgPagesPerVisit = engagementData.map(d => d.avg_pages_per_visit);
+const avgTimeOnSite = engagementData.map(d => d.avg_time_on_site);
+
+// Order Count Chart
+const ordersCtx = document.getElementById('ordersChart').getContext('2d');
+new Chart(ordersCtx, {
+    type: 'bar',
+    data: {
+        labels: labels,
+        datasets: [{
+            label: 'Paid Orders',
+            data: paidOrders,
+            backgroundColor: '#10b981',
+            borderColor: '#059669',
+            borderWidth: 1
+        }, {
+            label: 'Pending Orders',
+            data: pendingOrders,
+            backgroundColor: '#f59e0b',
+            borderColor: '#d97706',
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+            mode: 'index',
+            intersect: false,
+        },
+        plugins: {
+            legend: {
+                display: true,
+                position: 'top',
+                labels: {
+                    usePointStyle: true,
+                    padding: 15,
+                    font: { size: 11, weight: '500' }
+                }
+            },
+            tooltip: {
+                backgroundColor: '#1f2937',
+                titleColor: '#fff',
+                bodyColor: '#d1d5db',
+                borderColor: '#374151',
+                borderWidth: 1,
+                padding: 12,
+                callbacks: {
+                    title: function(context) {
+                        const dateStr = context[0].label;
+                        const [year, month, day] = dateStr.split('-');
+                        const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                        return date.toLocaleDateString('en-US', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric'
+                        });
+                    }
+                }
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    precision: 0,
+                    font: { size: 11 },
+                    color: '#6b7280'
+                },
+                grid: {
+                    color: '#f3f4f6',
+                    drawBorder: false
+                }
+            },
+            x: {
+                ticks: {
+                    maxRotation: 0,
+                    autoSkip: true,
+                    maxTicksLimit: 7,
+                    font: { size: 10 },
+                    color: '#6b7280',
+                    callback: function(value, index) {
+                        const dateStr = this.getLabelForValue(value);
+                        const [year, month, day] = dateStr.split('-');
+                        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                        return monthNames[parseInt(month) - 1] + ' ' + parseInt(day);
+                    }
+                },
+                grid: {
+                    display: false
+                }
+            }
+        }
+    }
+});
+
+// Engagement Metrics Chart
+const engagementCtx = document.getElementById('engagementChart').getContext('2d');
+new Chart(engagementCtx, {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [{
+            label: 'Pages/Visit',
+            data: avgPagesPerVisit,
+            borderColor: '#06b6d4',
+            backgroundColor: 'rgba(6, 182, 212, 0.1)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4,
+            pointRadius: 3,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#06b6d4',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2,
+            yAxisID: 'y'
+        }, {
+            label: 'Time on Site (s)',
+            data: avgTimeOnSite,
+            borderColor: '#ec4899',
+            backgroundColor: 'rgba(236, 72, 153, 0.1)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4,
+            pointRadius: 3,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#ec4899',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2,
+            yAxisID: 'y1'
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+            mode: 'index',
+            intersect: false,
+        },
+        plugins: {
+            legend: {
+                display: true,
+                position: 'top',
+                labels: {
+                    usePointStyle: true,
+                    padding: 15,
+                    font: { size: 11, weight: '500' }
+                }
+            },
+            tooltip: {
+                backgroundColor: '#1f2937',
+                titleColor: '#fff',
+                bodyColor: '#d1d5db',
+                borderColor: '#374151',
+                borderWidth: 1,
+                padding: 12,
+                callbacks: {
+                    title: function(context) {
+                        const dateStr = context[0].label;
+                        const [year, month, day] = dateStr.split('-');
+                        const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                        return date.toLocaleDateString('en-US', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric'
+                        });
+                    },
+                    label: function(context) {
+                        let label = context.dataset.label || '';
+                        if (label) {
+                            label += ': ';
+                        }
+                        if (context.parsed.y !== null) {
+                            if (context.datasetIndex === 1) {
+                                // Time on site - format as time
+                                const seconds = Math.floor(context.parsed.y);
+                                const mins = Math.floor(seconds / 60);
+                                const secs = seconds % 60;
+                                label += mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+                            } else {
+                                label += context.parsed.y.toFixed(2);
+                            }
+                        }
+                        return label;
+                    }
+                }
+            }
+        },
+        scales: {
+            y: {
+                type: 'linear',
+                display: true,
+                position: 'left',
+                beginAtZero: true,
+                ticks: {
+                    precision: 1,
+                    font: { size: 11 },
+                    color: '#06b6d4'
+                },
+                grid: {
+                    color: '#f3f4f6',
+                    drawBorder: false
+                }
+            },
+            y1: {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                beginAtZero: true,
+                ticks: {
+                    precision: 0,
+                    font: { size: 11 },
+                    color: '#ec4899',
+                    callback: function(value) {
+                        return value + 's';
+                    }
+                },
+                grid: {
+                    drawOnChartArea: false,
+                    drawBorder: false
+                }
+            },
+            x: {
+                ticks: {
+                    maxRotation: 0,
+                    autoSkip: true,
+                    maxTicksLimit: 7,
+                    font: { size: 10 },
+                    color: '#6b7280',
+                    callback: function(value, index) {
+                        const dateStr = this.getLabelForValue(value);
+                        const [year, month, day] = dateStr.split('-');
+                        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                        return monthNames[parseInt(month) - 1] + ' ' + parseInt(day);
+                    }
+                },
+                grid: {
+                    display: false
+                }
+            }
+        }
+    }
+});
+
+// Growth Chart
+const growthData = JSON.parse({{.GrowthJSON}});
+const newCustomers = growthData.map(d => d.new_customers);
+const newSMSSignups = growthData.map(d => d.new_sms_signups);
+
+const growthCtx = document.getElementById('growthChart').getContext('2d');
+new Chart(growthCtx, {
+    type: 'bar',
+    data: {
+        labels: labels,
+        datasets: [{
+            label: 'New Customers',
+            data: newCustomers,
+            backgroundColor: '#8b5cf6',
+            borderColor: '#7c3aed',
+            borderWidth: 1
+        }, {
+            label: 'New SMS Signups',
+            data: newSMSSignups,
+            backgroundColor: '#06b6d4',
+            borderColor: '#0891b2',
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+            mode: 'index',
+            intersect: false,
+        },
+        plugins: {
+            legend: {
+                display: true,
+                position: 'top',
+                labels: {
+                    usePointStyle: true,
+                    padding: 15,
+                    font: { size: 12, weight: '500' }
+                }
+            },
+            tooltip: {
+                backgroundColor: '#1f2937',
+                titleColor: '#fff',
+                bodyColor: '#d1d5db',
+                borderColor: '#374151',
+                borderWidth: 1,
+                padding: 12,
+                callbacks: {
+                    title: function(context) {
+                        const dateStr = context[0].label;
+                        const [year, month, day] = dateStr.split('-');
+                        const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                        return date.toLocaleDateString('en-US', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric'
+                        });
+                    }
+                }
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    precision: 0,
+                    font: { size: 11 },
+                    color: '#6b7280'
+                },
+                grid: {
+                    color: '#f3f4f6',
+                    drawBorder: false
+                }
+            },
+            x: {
+                ticks: {
+                    maxRotation: 0,
+                    autoSkip: true,
+                    maxTicksLimit: 10,
+                    font: { size: 11 },
+                    color: '#6b7280',
+                    callback: function(value, index) {
+                        const dateStr = this.getLabelForValue(value);
+                        const [year, month, day] = dateStr.split('-');
+                        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                        return monthNames[parseInt(month) - 1] + ' ' + parseInt(day);
+                    }
+                },
+                grid: {
+                    display: false
+                }
+            }
+        }
+    }
+});
+</script>
 
 {{end}}
