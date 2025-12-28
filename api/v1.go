@@ -862,11 +862,9 @@ func (api *APIV1) createPaymentIntent(w http.ResponseWriter, r *http.Request) {
 
 	// Create payment intent
 	params := &stripe.PaymentIntentParams{
-		Amount:   stripe.Int64(int64(total * 100)), // Convert to cents
-		Currency: stripe.String(string(stripe.CurrencyUSD)),
-		AutomaticPaymentMethods: &stripe.PaymentIntentAutomaticPaymentMethodsParams{
-			Enabled: stripe.Bool(true),
-		},
+		Amount:              stripe.Int64(int64(total * 100)), // Convert to cents
+		Currency:            stripe.String(string(stripe.CurrencyUSD)),
+		PaymentMethodTypes:  stripe.StringSlice([]string{"card", "link"}), // Card payments, Apple Pay, Google Pay, and Link
 	}
 
 	// Link to Stripe customer if we have one

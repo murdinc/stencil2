@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -69,26 +70,73 @@ func serve() {
 
 	hr := hostrouter.New()
 
+	// Use channels and sync to parallelize website initialization
+	type websiteResult struct {
+		website *frontend.Website
+		config  configs.WebsiteConfig
+		err     error
+	}
+
+	results := make(chan websiteResult, len(websiteConfigs))
+	var wg sync.WaitGroup
+
+	log.Printf("Initializing %d websites in parallel...", len(websiteConfigs))
+
+	// Initialize all websites concurrently
 	for _, websiteConfig := range websiteConfigs {
+		wg.Add(1)
+		go func(config configs.WebsiteConfig) {
+			defer wg.Done()
+			result := websiteResult{config: config}
 
-		// Create a new site instance
-		website, err := frontend.NewWebsite(envConfig, websiteConfig)
-		if err != nil {
-			log.Fatal(err)
+			log.Printf("[%s] Starting initialization...", config.SiteName)
+
+			// Create a new site instance
+			website, err := frontend.NewWebsite(envConfig, config)
+			if err != nil {
+				result.err = err
+				results <- result
+				return
+			}
+
+			result.website = website
+			results <- result
+
+			log.Printf("[%s] ✓ Initialized successfully", config.SiteName)
+		}(websiteConfig)
+	}
+
+	// Close results channel when all goroutines complete
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect results
+	websites := make([]*frontend.Website, 0, len(websiteConfigs))
+	for result := range results {
+		if result.err != nil {
+			log.Fatalf("[%s] Failed to initialize: %v", result.config.SiteName, result.err)
 		}
-		if website.DBConn.Connected {
-			defer website.DBConn.Database.Close()
+
+		websites = append(websites, result.website)
+
+		// Register router for this website
+		router := result.website.GetRouter()
+		hr.Map(result.website.WebsiteConfig.HTTP.Address, router())
+
+		// Defer database close
+		if result.website.DBConn.Connected {
+			defer result.website.DBConn.Database.Close()
 		}
 
-		router := website.GetRouter()
-
-		hr.Map(website.WebsiteConfig.HTTP.Address, router())
-
-		// start file watcher on dev
+		// Start file watcher on dev
 		if ProdMode == false {
-			go website.StartWatcher()
+			go result.website.StartWatcher()
 		}
 	}
+
+	log.Printf("✓ Successfully initialized all %d websites", len(websites))
 
 	// Start admin server if enabled
 	if envConfig.Admin.Enabled {

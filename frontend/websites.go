@@ -43,54 +43,56 @@ func NewWebsite(envConfig configs.EnvironmentConfig, websiteConfig configs.Websi
 
 	dbConn := &database.DBConnection{}
 
+	siteName := websiteConfig.SiteName
+
 	// Open a connection to the MySQL database
 	err := dbConn.Connect(envConfig.Database.User, envConfig.Database.Password, envConfig.Database.Host, envConfig.Database.Port, websiteConfig.Database.Name, 10*time.Second)
 	if err != nil {
-		log.Fatalf("Failed to connect to the database: %v", err)
+		return nil, fmt.Errorf("[%s] failed to connect to database: %v", siteName, err)
 	}
 
 	// Verify the database connection
 	if dbConn.Connected {
 		err = dbConn.Database.Ping()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("[%s] database ping failed: %v", siteName, err)
 		}
 
 		// Initialize article/content tables if they don't exist
 		err = dbConn.InitArticleTables()
 		if err != nil {
-			log.Printf("Warning: Failed to initialize article tables: %v", err)
+			log.Printf("[%s] Warning: Failed to initialize article tables: %v", siteName, err)
 		}
 
 		// Initialize e-commerce tables if they don't exist
 		err = dbConn.InitEcommerceTables()
 		if err != nil {
-			log.Printf("Warning: Failed to initialize e-commerce tables: %v", err)
+			log.Printf("[%s] Warning: Failed to initialize e-commerce tables: %v", siteName, err)
 		}
 
 		// Initialize analytics tables if they don't exist
 		err = dbConn.InitAnalyticsTables()
 		if err != nil {
-			log.Printf("Warning: Failed to initialize analytics tables: %v", err)
+			log.Printf("[%s] Warning: Failed to initialize analytics tables: %v", siteName, err)
 		}
 
-	// Initialize messages tables if they don't exist
-	err = dbConn.InitMessagesTables()
-	if err != nil {
-		log.Printf("Warning: Failed to initialize messages tables: %v", err)
-	}
+		// Initialize messages tables if they don't exist
+		err = dbConn.InitMessagesTables()
+		if err != nil {
+			log.Printf("[%s] Warning: Failed to initialize messages tables: %v", siteName, err)
+		}
 
 		// Copy analytics.js to website public directory
 		err = copyAnalyticsJS(websiteConfig.Directory)
 		if err != nil {
-			log.Printf("Warning: Failed to copy analytics.js: %v", err)
+			log.Printf("[%s] Warning: Failed to copy analytics.js: %v", siteName, err)
 		}
 	}
 
 	// Read in the template configs
 	templateConfigs, err := configs.ReadTemplateConfigs(websiteConfig.Directory)
 	if err != nil {
-		log.Fatalf("Failed to load template configs: %v", err)
+		return nil, fmt.Errorf("[%s] failed to load template configs: %v", siteName, err)
 	}
 
 	website := &Website{
@@ -103,19 +105,19 @@ func NewWebsite(envConfig configs.EnvironmentConfig, websiteConfig configs.Websi
 	// Load the JS Files
 	website.JSFiles, err = website.LoadJS("")
 	if err != nil {
-		log.Fatalf("Error loading JS files %v", err)
+		return nil, fmt.Errorf("[%s] error loading JS files: %v", siteName, err)
 	}
 
 	// Load the CSS Files
 	website.CSSFiles, err = website.LoadCSS("")
 	if err != nil {
-		log.Fatalf("Error loading CSS files %v", err)
+		return nil, fmt.Errorf("[%s] error loading CSS files: %v", siteName, err)
 	}
 
 	// Store the hash of the website public directory
 	website.Hash, err = MD5All(fmt.Sprintf("%s/public/", websiteConfig.Directory))
 	if err != nil {
-		log.Fatalf("Error generating hash of public directory %v", err)
+		return nil, fmt.Errorf("[%s] error generating hash of public directory: %v", siteName, err)
 	}
 
 	// Register website in global registry
@@ -225,6 +227,5 @@ func copyAnalyticsJS(websiteDir string) error {
 		return fmt.Errorf("failed to write analytics.js to %s: %w", destPath, err)
 	}
 
-	log.Printf("Copied analytics.js to %s", destPath)
 	return nil
 }

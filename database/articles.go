@@ -2,7 +2,6 @@ package database
 
 import (
 	"fmt"
-	"log"
 )
 
 // InitArticleTables creates article/content tables if they don't exist
@@ -159,6 +158,5 @@ func (db *DBConnection) InitArticleTables() error {
 		}
 	}
 
-	log.Println("Article/content tables initialized successfully")
 	return nil
 }

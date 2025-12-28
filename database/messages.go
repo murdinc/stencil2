@@ -2,7 +2,6 @@ package database
 
 import (
 	"fmt"
-	"log"
 	"time"
 )
 
@@ -46,7 +45,6 @@ func (db *DBConnection) InitMessagesTables() error {
 		}
 	}
 
-	log.Println("Messages tables initialized successfully")
 	return nil
 }
 

@@ -3,7 +3,6 @@ package database
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 )
 
@@ -53,7 +52,6 @@ func (db *DBConnection) InitAnalyticsTables() error {
 		}
 	}
 
-	log.Println("Analytics tables initialized successfully")
 	return nil
 }
 

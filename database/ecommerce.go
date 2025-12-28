@@ -213,7 +213,6 @@ func (db *DBConnection) InitEcommerceTables() error {
 		}
 	}
 
-	log.Println("E-commerce tables initialized successfully")
 	return nil
 }
 
