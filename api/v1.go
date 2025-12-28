@@ -1436,6 +1436,7 @@ func (api *APIV1) handleSMSWebhook(w http.ResponseWriter, r *http.Request) {
 
 func (api *APIV1) trackAnalytics(w http.ResponseWriter, r *http.Request) {
 	var reqBody struct {
+		VisitorID    string                 `json:"v"`
 		SessionID    string                 `json:"s"`
 		EventType    string                 `json:"t"`
 		Path         string                 `json:"p"`
@@ -1466,13 +1467,14 @@ func (api *APIV1) trackAnalytics(w http.ResponseWriter, r *http.Request) {
 	// Track based on type
 	if reqBody.EventType == "e" && reqBody.EventName != "" {
 		// Custom event
-		err = api.dbConn.TrackEvent(reqBody.SessionID, reqBody.EventName, reqBody.Path, reqBody.EventData)
+		err = api.dbConn.TrackEvent(reqBody.VisitorID, reqBody.SessionID, reqBody.EventName, reqBody.Path, reqBody.EventData)
 	} else if reqBody.EventType == "h" {
 		// Heartbeat - track as event to update session activity
-		err = api.dbConn.TrackEvent(reqBody.SessionID, "heartbeat", reqBody.Path, nil)
+		err = api.dbConn.TrackEvent(reqBody.VisitorID, reqBody.SessionID, "heartbeat", reqBody.Path, nil)
 	} else {
 		// Pageview (default)
 		err = api.dbConn.TrackPageView(
+			reqBody.VisitorID,
 			reqBody.SessionID,
 			reqBody.Path,
 			reqBody.Referrer,

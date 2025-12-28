@@ -16,6 +16,7 @@ func (db *DBConnection) InitAnalyticsTables() error {
 		// Analytics - Page Views
 		`CREATE TABLE IF NOT EXISTS analytics_pageviews (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			visitor_id VARCHAR(36) NOT NULL,
 			session_id VARCHAR(36) NOT NULL,
 			path VARCHAR(500) NOT NULL,
 			referrer VARCHAR(500) DEFAULT NULL,
@@ -24,25 +25,43 @@ func (db *DBConnection) InitAnalyticsTables() error {
 			screen_width INT DEFAULT NULL,
 			screen_height INT DEFAULT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			INDEX idx_visitor_id (visitor_id),
 			INDEX idx_session_id (session_id),
 			INDEX idx_path (path(255)),
 			INDEX idx_created_at (created_at),
+			INDEX idx_visitor_created (visitor_id, created_at),
 			INDEX idx_session_created (session_id, created_at)
 		)`,
 
 		// Analytics - Custom Events
 		`CREATE TABLE IF NOT EXISTS analytics_events (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			visitor_id VARCHAR(36) NOT NULL,
 			session_id VARCHAR(36) NOT NULL,
 			event_name VARCHAR(100) NOT NULL,
 			event_data JSON DEFAULT NULL,
 			path VARCHAR(500) DEFAULT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			INDEX idx_visitor_id (visitor_id),
 			INDEX idx_session_id (session_id),
 			INDEX idx_event_name (event_name),
 			INDEX idx_created_at (created_at),
 			INDEX idx_event_created (event_name, created_at)
 		)`,
+	}
+
+	// Run migrations for existing tables
+	migrations := []string{
+		// Add visitor_id to analytics_pageviews if it doesn't exist
+		`ALTER TABLE analytics_pageviews
+		 ADD COLUMN IF NOT EXISTS visitor_id VARCHAR(36) NOT NULL DEFAULT '' AFTER id,
+		 ADD INDEX IF NOT EXISTS idx_visitor_id (visitor_id),
+		 ADD INDEX IF NOT EXISTS idx_visitor_created (visitor_id, created_at)`,
+
+		// Add visitor_id to analytics_events if it doesn't exist
+		`ALTER TABLE analytics_events
+		 ADD COLUMN IF NOT EXISTS visitor_id VARCHAR(36) NOT NULL DEFAULT '' AFTER id,
+		 ADD INDEX IF NOT EXISTS idx_visitor_id (visitor_id)`,
 	}
 
 	for _, schema := range schemas {
@@ -52,22 +71,27 @@ func (db *DBConnection) InitAnalyticsTables() error {
 		}
 	}
 
+	// Run migrations (ignore errors for existing columns)
+	for _, migration := range migrations {
+		db.Database.Exec(migration)
+	}
+
 	return nil
 }
 
 // TrackPageView records a page view
-func (db *DBConnection) TrackPageView(sessionID, path, referrer, userAgent, ipAddress string, screenWidth, screenHeight int) error {
+func (db *DBConnection) TrackPageView(visitorID, sessionID, path, referrer, userAgent, ipAddress string, screenWidth, screenHeight int) error {
 	sqlQuery := `
 		INSERT INTO analytics_pageviews
-		(session_id, path, referrer, user_agent, ip_address, screen_width, screen_height)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		(visitor_id, session_id, path, referrer, user_agent, ip_address, screen_width, screen_height)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	_, err := db.ExecuteQuery(sqlQuery, sessionID, path, referrer, userAgent, ipAddress, screenWidth, screenHeight)
+	_, err := db.ExecuteQuery(sqlQuery, visitorID, sessionID, path, referrer, userAgent, ipAddress, screenWidth, screenHeight)
 	return err
 }
 
 // TrackEvent records a custom event
-func (db *DBConnection) TrackEvent(sessionID, eventName, path string, eventData map[string]interface{}) error {
+func (db *DBConnection) TrackEvent(visitorID, sessionID, eventName, path string, eventData map[string]interface{}) error {
 	var eventDataJSON []byte
 	var err error
 
@@ -80,10 +104,10 @@ func (db *DBConnection) TrackEvent(sessionID, eventName, path string, eventData 
 
 	sqlQuery := `
 		INSERT INTO analytics_events
-		(session_id, event_name, event_data, path)
-		VALUES (?, ?, ?, ?)
+		(visitor_id, session_id, event_name, event_data, path)
+		VALUES (?, ?, ?, ?, ?)
 	`
-	_, err = db.ExecuteQuery(sqlQuery, sessionID, eventName, eventDataJSON, path)
+	_, err = db.ExecuteQuery(sqlQuery, visitorID, sessionID, eventName, eventDataJSON, path)
 	return err
 }
 
@@ -102,6 +126,17 @@ func (db *DBConnection) GetPageViewStats(startDate, endDate time.Time) (map[stri
 	}
 	stats["total_views"] = totalViews
 
+	// Unique visitors (by visitor_id, not session_id)
+	var uniqueVisitors int
+	err = db.QueryRow(`
+		SELECT COUNT(DISTINCT visitor_id) FROM analytics_pageviews
+		WHERE created_at BETWEEN ? AND ?
+	`, startDate, endDate).Scan(&uniqueVisitors)
+	if err != nil {
+		return nil, err
+	}
+	stats["unique_visitors"] = uniqueVisitors
+
 	// Unique sessions
 	var uniqueSessions int
 	err = db.QueryRow(`
@@ -119,7 +154,7 @@ func (db *DBConnection) GetPageViewStats(startDate, endDate time.Time) (map[stri
 // GetTopPages returns the most visited pages for a date range
 func (db *DBConnection) GetTopPages(startDate, endDate time.Time, limit int) ([]map[string]interface{}, error) {
 	sqlQuery := `
-		SELECT path, COUNT(*) as views, COUNT(DISTINCT session_id) as unique_visitors
+		SELECT path, COUNT(*) as views, COUNT(DISTINCT visitor_id) as unique_visitors
 		FROM analytics_pageviews
 		WHERE created_at BETWEEN ? AND ?
 		GROUP BY path

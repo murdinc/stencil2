@@ -1,0 +1,85 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>{{.Title}}</h2>
+    <p>Create a new website and configure its settings</p>
+</div>
+
+<div class="card">
+    <form method="POST" action="{{.Action}}">
+        <div class="form-group">
+            <label>Site Name:</label>
+            <input type="text" name="siteName" placeholder="e.g., My Awesome Store" required>
+            <p style="font-size: 12px; color: #7f8c8d; margin: 5px 0 0 0;">Display name for your website</p>
+        </div>
+
+        <div class="form-group">
+            <label>Directory:</label>
+            <input type="text" name="directory" placeholder="e.g., mystore.com" required>
+            <p style="font-size: 12px; color: #7f8c8d; margin: 5px 0 0 0;">Folder name in /websites/ directory</p>
+        </div>
+
+        <div class="form-group">
+            <label>Database Name:</label>
+            <input type="text" name="databaseName" placeholder="e.g., mystore_db" required>
+            <p style="font-size: 12px; color: #7f8c8d; margin: 5px 0 0 0;">MySQL database name for this site</p>
+        </div>
+
+        <div class="form-group">
+            <label>HTTP Address:</label>
+            <input type="text" name="httpAddress" placeholder="e.g., mystore.com" required>
+            <p style="font-size: 12px; color: #7f8c8d; margin: 5px 0 0 0;">Domain name (without http://)</p>
+        </div>
+
+        <div class="form-group">
+            <label>Media Proxy URL (Optional):</label>
+            <input type="text" name="mediaProxyUrl" placeholder="e.g., https://cdn.example.com">
+            <p style="font-size: 12px; color: #7f8c8d; margin: 5px 0 0 0;">CDN or proxy URL for media files</p>
+        </div>
+
+        <div style="margin-top: 30px; padding: 20px; background: #f0f4ff; border-left: 4px solid #667eea; border-radius: 4px;">
+            <p style="margin: 0; font-size: 14px; color: #4a5568;">
+                <strong>Note:</strong> This will create the website directory structure and a basic config-dev.json file.
+                You'll need to manually add Stripe, SMTP, and other API keys to the config file afterward.
+            </p>
+        </div>
+
+        <button type="submit" class="btn btn-success" style="margin-top: 20px;">Create Website</button>
+        <a href="/superadmin" class="btn">Cancel</a>
+    </form>
+</div>
+
+<style>
+    .form-group {
+        margin-bottom: 24px;
+    }
+    .form-group label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #2d3748;
+        font-size: 14px;
+    }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #e1e8ed;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: border-color 0.2s;
+    }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    .form-group textarea {
+        min-height: 120px;
+        font-family: inherit;
+        resize: vertical;
+    }
+</style>
+{{end}}

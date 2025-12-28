@@ -1,0 +1,76 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>Manage Websites</h2>
+    <p>View and manage all websites in your stencil installation</p>
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3>All Websites</h3>
+        <a href="/websites/new" class="btn btn-success">Create New Website</a>
+    </div>
+
+    {{if .Websites}}
+    <table>
+        <thead>
+            <tr>
+                <th>Site Name</th>
+                <th>Database</th>
+                <th>Directory</th>
+                <th>HTTP Address</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Websites}}
+            <tr>
+                <td><strong>{{.SiteName}}</strong></td>
+                <td><code style="background: #f7f9fc; padding: 2px 8px; border-radius: 4px; font-size: 12px;">{{.DatabaseName}}</code></td>
+                <td><code style="background: #f7f9fc; padding: 2px 8px; border-radius: 4px; font-size: 12px;">{{.Directory}}</code></td>
+                <td>{{.HTTPAddress}}</td>
+                <td>
+                    <a href="/site/{{.DatabaseName}}" class="btn btn-sm">Open</a>
+                    <a href="/websites/{{.DatabaseName}}/edit" class="btn btn-sm" style="opacity: 0.5; cursor: not-allowed;">Edit</a>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <div style="text-align: center; padding: 40px; color: #718096;">
+        <p style="font-size: 16px; margin-bottom: 20px;">No websites found</p>
+        <a href="/websites/new" class="btn btn-success">Create Your First Website</a>
+    </div>
+    {{end}}
+</div>
+
+<style>
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    th {
+        text-align: left;
+        padding: 12px;
+        background: #f7f9fc;
+        font-weight: 600;
+        font-size: 13px;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid #e1e8ed;
+    }
+    td {
+        padding: 14px 12px;
+        border-bottom: 1px solid #f0f3f7;
+        color: #2d3748;
+        font-size: 14px;
+    }
+    tr:hover {
+        background: #f7f9fc;
+    }
+    tr:last-child td {
+        border-bottom: none;
+    }
+</style>
+{{end}}

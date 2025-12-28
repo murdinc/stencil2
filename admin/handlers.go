@@ -327,17 +327,157 @@ func (s *AdminServer) handleWebsitesList(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s.renderTemplate(w, "websites_list", map[string]interface{}{
-		"Websites": websites,
+	s.renderWithLayout(w, r, "websites_list_content.html", map[string]interface{}{
+		"Title":         "Manage Websites",
+		"ActiveSection": "websites",
+		"Websites":      websites,
 	})
 }
 
 // handleWebsiteNew renders the new website form
 func (s *AdminServer) handleWebsiteNew(w http.ResponseWriter, r *http.Request) {
-	s.renderTemplate(w, "website_form", map[string]interface{}{
-		"Title":  "Create New Website",
-		"Action": "/websites/new",
+	s.renderWithLayout(w, r, "website_form_content.html", map[string]interface{}{
+		"Title":         "Create New Website",
+		"Action":        "/websites/new",
+		"ActiveSection": "website-new",
 	})
+}
+
+// handleSuperadmin renders the superadmin console dashboard
+func (s *AdminServer) handleSuperadmin(w http.ResponseWriter, r *http.Request) {
+	websites, err := s.GetAllWebsites()
+	if err != nil {
+		log.Printf("Error loading websites: %v", err)
+		websites = []Website{}
+	}
+
+	s.renderWithLayout(w, r, "superadmin_dashboard_content.html", map[string]interface{}{
+		"Title":         "Superadmin Console",
+		"ActiveSection": "superadmin",
+		"Websites":      websites,
+	})
+}
+
+// handleSuperadminWebsiteNew renders the new website form in superadmin
+func (s *AdminServer) handleSuperadminWebsiteNew(w http.ResponseWriter, r *http.Request) {
+	s.renderWithLayout(w, r, "website_form_content.html", map[string]interface{}{
+		"Title":         "Create New Website",
+		"Action":        "/superadmin/websites/new",
+		"ActiveSection": "superadmin-website-new",
+	})
+}
+
+// handleSuperadminWebsiteCreate creates a new website from superadmin
+func (s *AdminServer) handleSuperadminWebsiteCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	website := Website{
+		SiteName:      r.FormValue("siteName"),
+		Directory:     r.FormValue("directory"),
+		DatabaseName:  r.FormValue("databaseName"),
+		HTTPAddress:   r.FormValue("httpAddress"),
+		MediaProxyURL: r.FormValue("mediaProxyUrl"),
+		APIVersion:    1,
+	}
+
+	// Create website directory structure
+	websiteDir := filepath.Join("websites", website.Directory)
+	if err := os.MkdirAll(websiteDir, 0755); err != nil {
+		http.Error(w, fmt.Sprintf("Error creating directory: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Create subdirectories
+	for _, dir := range []string{"templates", "public", "sitemaps"} {
+		if err := os.MkdirAll(filepath.Join(websiteDir, dir), 0755); err != nil {
+			http.Error(w, fmt.Sprintf("Error creating directory: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Create complete config file with all required fields
+	devConfig := map[string]interface{}{
+		"siteName":   website.SiteName,
+		"apiVersion": website.APIVersion,
+		"database": map[string]string{
+			"name": website.DatabaseName,
+		},
+		"http": map[string]string{
+			"address": website.HTTPAddress,
+		},
+		"mediaProxyUrl": website.MediaProxyURL,
+		"stripe": map[string]string{
+			"publishableKey": "pk_test_YOUR_KEY_HERE",
+			"secretKey":      "sk_test_YOUR_KEY_HERE",
+		},
+		"shippo": map[string]string{
+			"apiKey":      "YOUR_SHIPPO_KEY_HERE",
+			"labelFormat": "PDF_4x6",
+		},
+		"twilio": map[string]string{
+			"accountSid": "YOUR_TWILIO_SID",
+			"authToken":  "YOUR_TWILIO_TOKEN",
+			"fromPhone":  "+1234567890",
+		},
+		"email": map[string]interface{}{
+			"fromAddress": "orders@DOMAIN",
+			"fromName":    "SITE_NAME",
+			"replyTo":     "support@DOMAIN",
+			"imap": map[string]interface{}{
+				"server":   "imap.gmail.com",
+				"port":     993,
+				"username": "your-gmail@gmail.com",
+				"password": "your-app-password",
+				"useTLS":   true,
+			},
+			"smtp": map[string]interface{}{
+				"server":   "smtp.gmail.com",
+				"port":     587,
+				"username": "your-gmail@gmail.com",
+				"password": "your-app-password",
+				"useTLS":   true,
+			},
+		},
+		"ecommerce": map[string]interface{}{
+			"taxRate":      0.08,
+			"shippingCost": 10.00,
+		},
+		"earlyAccess": map[string]interface{}{
+			"enabled":  false,
+			"password": "",
+		},
+		"shipFrom": map[string]string{
+			"name":    "Your Name",
+			"street1": "123 Main St",
+			"street2": "",
+			"city":    "Your City",
+			"state":   "CA",
+			"zip":     "12345",
+			"country": "US",
+		},
+		"robotsTxt": "User-agent: *\nAllow: /",
+		"logo":      "",
+	}
+
+	configData, _ := json.MarshalIndent(devConfig, "", "  ")
+	if err := os.WriteFile(filepath.Join(websiteDir, "config-dev.json"), configData, 0644); err != nil {
+		http.Error(w, fmt.Sprintf("Error creating config file: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Save to admin database
+	_, err := s.CreateWebsite(website)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error saving website: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.LogActivity("create", "website", 0, website.DatabaseName, website)
+
+	http.Redirect(w, r, "/superadmin", http.StatusSeeOther)
 }
 
 // handleWebsiteCreate creates a new website
@@ -371,7 +511,7 @@ func (s *AdminServer) handleWebsiteCreate(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	// Create config files
+	// Create complete config file with all required fields
 	devConfig := map[string]interface{}{
 		"siteName":   website.SiteName,
 		"apiVersion": website.APIVersion,
@@ -381,10 +521,58 @@ func (s *AdminServer) handleWebsiteCreate(w http.ResponseWriter, r *http.Request
 		"http": map[string]string{
 			"address": website.HTTPAddress,
 		},
-	}
-
-	if website.MediaProxyURL != "" {
-		devConfig["mediaProxyUrl"] = website.MediaProxyURL
+		"mediaProxyUrl": website.MediaProxyURL,
+		"stripe": map[string]string{
+			"publishableKey": "pk_test_YOUR_KEY_HERE",
+			"secretKey":      "sk_test_YOUR_KEY_HERE",
+		},
+		"shippo": map[string]string{
+			"apiKey":      "YOUR_SHIPPO_KEY_HERE",
+			"labelFormat": "PDF_4x6",
+		},
+		"twilio": map[string]string{
+			"accountSid": "YOUR_TWILIO_SID",
+			"authToken":  "YOUR_TWILIO_TOKEN",
+			"fromPhone":  "+1234567890",
+		},
+		"email": map[string]interface{}{
+			"fromAddress": "orders@DOMAIN",
+			"fromName":    "SITE_NAME",
+			"replyTo":     "support@DOMAIN",
+			"imap": map[string]interface{}{
+				"server":   "imap.gmail.com",
+				"port":     993,
+				"username": "your-gmail@gmail.com",
+				"password": "your-app-password",
+				"useTLS":   true,
+			},
+			"smtp": map[string]interface{}{
+				"server":   "smtp.gmail.com",
+				"port":     587,
+				"username": "your-gmail@gmail.com",
+				"password": "your-app-password",
+				"useTLS":   true,
+			},
+		},
+		"ecommerce": map[string]interface{}{
+			"taxRate":      0.08,
+			"shippingCost": 10.00,
+		},
+		"earlyAccess": map[string]interface{}{
+			"enabled":  false,
+			"password": "",
+		},
+		"shipFrom": map[string]string{
+			"name":    "Your Name",
+			"street1": "123 Main St",
+			"street2": "",
+			"city":    "Your City",
+			"state":   "CA",
+			"zip":     "12345",
+			"country": "US",
+		},
+		"robotsTxt": "User-agent: *\nAllow: /",
+		"logo":      "",
 	}
 
 	configData, _ := json.MarshalIndent(devConfig, "", "  ")

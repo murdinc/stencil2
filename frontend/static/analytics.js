@@ -4,12 +4,37 @@
 
     // Configuration
     var SESSION_KEY = '_a_sid';
+    var VISITOR_KEY = '_a_vid';
     var SESSION_DURATION = 30 * 60 * 1000; // 30 minutes
+    var VISITOR_DURATION = 365 * 24 * 60 * 60 * 1000; // 1 year
     var HEARTBEAT_INTERVAL = 30 * 1000; // 30 seconds
     var heartbeatTimer = null;
     var isVisible = true;
 
-    // Session management
+    // Visitor ID management (persistent, 1 year)
+    function getVisitorId() {
+        var stored = localStorage.getItem(VISITOR_KEY);
+        var now = Date.now();
+
+        if (stored) {
+            try {
+                var data = JSON.parse(stored);
+                if (now - data.created < VISITOR_DURATION) {
+                    return data.id;
+                }
+            } catch (e) {}
+        }
+
+        // Create new visitor ID
+        var newId = generateId();
+        localStorage.setItem(VISITOR_KEY, JSON.stringify({
+            id: newId,
+            created: now
+        }));
+        return newId;
+    }
+
+    // Session management (30 minutes)
     function getSessionId() {
         var stored = localStorage.getItem(SESSION_KEY);
         var now = Date.now();
@@ -54,6 +79,7 @@
     // Track function
     function track(type, eventName, eventData) {
         var payload = {
+            v: getVisitorId(),
             s: getSessionId(),
             t: type || 'p', // 'p' for pageview, 'e' for event, 'h' for heartbeat
             p: location.pathname,

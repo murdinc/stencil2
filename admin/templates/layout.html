@@ -66,6 +66,12 @@
             background: rgba(255,255,255,0.2);
             transform: translateY(-1px);
         }
+        .header-right a.active {
+            background: rgba(255,255,255,0.3);
+            border-color: rgba(255, 255, 255, 0.5);
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
 
         /* Sidebar */
         .sidebar {
@@ -333,6 +339,7 @@
     <div class="header">
         <div class="header-left">
             <h1>stencil</h1>
+            {{if ne .ActiveSection "superadmin"}}{{if ne .ActiveSection "superadmin-website-new"}}{{if ne .ActiveSection "superadmin-users"}}
             <select id="site-selector" class="site-selector" onchange="switchSite()">
                 <option value="">Select a site...</option>
                 {{range .AllSites}}
@@ -341,15 +348,33 @@
                 </option>
                 {{end}}
             </select>
+            {{end}}{{end}}{{end}}
         </div>
         <div class="header-right">
+            {{if or (eq .ActiveSection "superadmin") (eq .ActiveSection "superadmin-website-new") (eq .ActiveSection "superadmin-users")}}
+            <a href="/" class="header-btn active">Superadmin</a>
+            {{else}}
+            <a href="/superadmin" class="header-btn">Superadmin</a>
+            {{end}}
             <a href="/logout">Logout</a>
         </div>
     </div>
 
-    {{if .CurrentSite}}
     <!-- Sidebar -->
     <div class="sidebar">
+        {{if or (eq .ActiveSection "superadmin") (eq .ActiveSection "superadmin-website-new") (eq .ActiveSection "superadmin-users")}}
+        <!-- Superadmin Console Sidebar -->
+        <div class="sidebar-section">
+            <h3>Superadmin Console</h3>
+            <a href="/superadmin" class="sidebar-link {{if eq .ActiveSection "superadmin"}}active{{end}}">Dashboard</a>
+        </div>
+        <div class="sidebar-section">
+            <h3>Manage</h3>
+            <a href="/superadmin/websites/new" class="sidebar-link {{if eq .ActiveSection "superadmin-website-new"}}active{{end}}">New Website</a>
+            <a href="/superadmin/users" class="sidebar-link {{if eq .ActiveSection "superadmin-users"}}active{{end}}" style="opacity: 0.5; cursor: not-allowed;">User Management (Coming Soon)</a>
+        </div>
+        {{else if .CurrentSite}}
+        <!-- Regular Site Sidebar -->
         <div class="sidebar-section">
             <h3>Dashboard</h3>
             <a href="/site/{{.CurrentSite.ID}}" class="sidebar-link {{if eq .ActiveSection "overview"}}active{{end}}">Overview</a>
@@ -379,23 +404,12 @@
             <a href="/site/{{.CurrentSite.ID}}/settings" class="sidebar-link {{if eq .ActiveSection "settings"}}active{{end}}">Site Settings</a>
             <a href="/site/{{.CurrentSite.ID}}/webhooks" class="sidebar-link {{if eq .ActiveSection "webhooks"}}active{{end}}">Webhooks</a>
         </div>
+        {{end}}
     </div>
 
     <!-- Main Content -->
     <div class="main">
         {{template "content" .}}
     </div>
-    {{else}}
-    <!-- No Site Selected -->
-    <div class="main">
-        <div class="no-site">
-            <div class="no-site-content">
-                <h2>Welcome to stencil</h2>
-                <p>Select a website from the dropdown above to get started, or create a new one.</p>
-                <a href="/websites/new" class="btn">Create New Website</a>
-            </div>
-        </div>
-    </div>
-    {{end}}
 </body>
 </html>

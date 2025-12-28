@@ -1,0 +1,82 @@
+{{define "content"}}
+<div class="content-header">
+    <h2>Superadmin Console</h2>
+    <p>Manage websites, users, and system-wide settings</p>
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3>Quick Actions</h3>
+        <a href="/superadmin/websites/new" class="btn btn-success">Create New Website</a>
+    </div>
+    <p style="color: #718096; font-size: 14px;">Use the sidebar to manage websites and users.</p>
+</div>
+
+{{if .Websites}}
+<div class="card">
+    <h3>All Websites ({{len .Websites}})</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Site Name</th>
+                <th>Database</th>
+                <th>Directory</th>
+                <th>HTTP Address</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Websites}}
+            <tr>
+                <td><strong>{{.SiteName}}</strong></td>
+                <td><code style="background: #f7f9fc; padding: 2px 8px; border-radius: 4px; font-size: 12px;">{{.DatabaseName}}</code></td>
+                <td><code style="background: #f7f9fc; padding: 2px 8px; border-radius: 4px; font-size: 12px;">{{.Directory}}</code></td>
+                <td>{{.HTTPAddress}}</td>
+                <td>
+                    <a href="/site/{{.DatabaseName}}" class="btn btn-sm">Manage</a>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="card">
+    <div style="text-align: center; padding: 40px; color: #718096;">
+        <h3 style="margin-bottom: 12px; color: #4a5568;">No websites found</h3>
+        <p style="font-size: 14px; margin-bottom: 20px;">Get started by creating your first website</p>
+        <a href="/superadmin/websites/new" class="btn btn-success">Create Website</a>
+    </div>
+</div>
+{{end}}
+
+<style>
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    th {
+        text-align: left;
+        padding: 12px;
+        background: #f7f9fc;
+        font-weight: 600;
+        font-size: 13px;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid #e1e8ed;
+    }
+    td {
+        padding: 14px 12px;
+        border-bottom: 1px solid #f0f3f7;
+        color: #2d3748;
+        font-size: 14px;
+    }
+    tr:hover {
+        background: #f7f9fc;
+    }
+    tr:last-child td {
+        border-bottom: none;
+    }
+</style>
+{{end}}

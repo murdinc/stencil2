@@ -52,9 +52,14 @@ func (s *AdminServer) setupRoutes() {
 		r.Get("/", s.handleDashboard)
 		r.Get("/logout", s.handleLogout)
 
-		// Website management
+		// Website management (legacy)
 		r.Get("/websites/new", s.handleWebsiteNew)
 		r.Post("/websites/new", s.handleWebsiteCreate)
+
+		// Superadmin console
+		r.Get("/superadmin", s.handleSuperadmin)
+		r.Get("/superadmin/websites/new", s.handleSuperadminWebsiteNew)
+		r.Post("/superadmin/websites/new", s.handleSuperadminWebsiteCreate)
 
 		// Site context routes (ID is database name)
 		r.Get("/site/{id}", s.handleSiteDashboard)
