@@ -36,8 +36,12 @@ A high-performance, multi-site template engine and content management platform w
 - **Preview Mode**: Preview draft content before publishing
 - **SEO Support**: Canonical URLs, keywords, and meta descriptions
 
-### Marketing Features
+### Marketing & Communication Features
+- **Contact Form System**: Built-in contact form with spam protection and admin management
+- **Message Management**: Admin interface for viewing and replying to contact messages
+- **IMAP Email Polling**: Automatic polling of IMAP inbox for customer replies (every 5 minutes)
 - **SMS Signups**: Collect phone numbers for marketing with country code support
+- **SMS Campaigns**: Bulk SMS messaging system for marketing to signups
 - **Early Access Control**: Password-protect sites during development with public page exceptions
 - **Email Marketing**: Customer and SMS signup lists for marketing campaigns
 
@@ -52,6 +56,19 @@ A high-performance, multi-site template engine and content management platform w
 - **Heartbeat Tracking**: 30-second heartbeat signals for accurate session duration and active user detection
 - **Session Management**: Automatic session detection with 30-minute timeout and localStorage persistence
 - **Admin Dashboard**: Beautiful analytics dashboard with time period selectors (7/30/90/365 days)
+- **Performance Optimized**: Composite database indexes on common query patterns for fast dashboard rendering
+
+### Security Features
+- **Bcrypt Password Hashing**: Industry-standard password hashing with cost factor 12
+- **CSRF Protection**: Cross-Site Request Forgery protection on all admin forms (production mode)
+- **Encrypted Sessions**: AES-256 encrypted session cookies with 32-byte keys
+- **Secure Cookie Flags**: HttpOnly, Secure (production), and SameSite=Lax protection
+- **Auto Password Setup**: First-run password setup wizard with confirmation
+- **Auto Key Generation**: Automatic generation of session and CSRF keys on first run
+- **Rate Limiting**: Contact form rate limiting (5 submissions per hour per IP)
+- **Honeypot Protection**: Bot detection on contact forms
+- **Input Validation**: Bounds checking on cart quantities, pagination, and user inputs
+- **Database Connection Security**: Connection pooling with timeout limits
 
 ## Table of Contents
 
@@ -61,6 +78,9 @@ A high-performance, multi-site template engine and content management platform w
   - [Environment Configuration](#environment-configuration)
   - [Website Configuration](#website-configuration)
   - [Template Configuration](#template-configuration)
+- [Admin Backend (CMS)](#admin-backend-cms)
+  - [First Run Setup](#first-run-setup)
+  - [Security Features](#security-features-1)
 - [CLI Commands](#cli-commands)
 - [Directory Structure](#directory-structure)
 - [Template System](#template-system)
@@ -69,6 +89,7 @@ A high-performance, multi-site template engine and content management platform w
   - [JavaScript API](#javascript-api)
   - [Admin Dashboard](#admin-dashboard)
   - [Privacy & Performance](#privacy--performance)
+- [Contact Form System](#contact-form-system)
 - [API Endpoints](#api-endpoints)
 - [Database Schema](#database-schema)
 - [Deployment](#deployment)
@@ -204,7 +225,39 @@ Visit `http://example.com:8080`
 
 ## Admin Backend (CMS)
 
-Stencil2 includes a built-in web-based admin interface for managing websites, articles, and products.
+Stencil2 includes a built-in web-based admin interface for managing websites, articles, products, orders, and customers.
+
+### First Run Setup
+
+On first run, Stencil2 automatically sets up the admin system:
+
+1. **Start the server**: `./stencil2 serve`
+2. **Enter admin password** (if not configured):
+   ```
+   === Admin Setup ===
+   No admin password found. Let's set one up.
+   Enter admin password: ********
+   Confirm admin password: ********
+   ```
+3. **Auto-generated keys**: Session and CSRF keys are automatically generated (32-byte each)
+4. **Config saved**: All settings are saved to `websites/env-dev.json` or `websites/env-prod.json`
+
+After setup, visit `http://localhost:8081/login` and use your password.
+
+### Security Features
+
+**Production-Grade Security** (automatically configured on first run):
+- **Bcrypt Password Hashing**: Cost factor 12 for admin passwords
+- **Encrypted Sessions**: 32-byte AES session keys with HttpOnly, Secure, and SameSite flags
+- **CSRF Protection**: Enabled in production mode, disabled in development for localhost access
+- **Session Expiry**: 24-hour sessions with automatic timeout
+- **Multi-User Support**: Create additional admin users with per-site access controls
+
+**User Management**:
+- Create multiple admin users via the superadmin panel
+- Assign specific websites to users or grant access to all sites
+- Each user has their own bcrypt-hashed password
+- Username/password authentication on all admin routes
 
 ### Enabling the Admin
 
@@ -215,10 +268,10 @@ The admin backend is configured in `websites/env-dev.json`:
   "admin": {
     "enabled": true,
     "port": "8081",
-    "password": "your-secure-password",
-    "database": {
-      "name": "stencil_admin"
-    }
+    "password": "",
+    "sessionKey": "",
+    "csrfKey": "",
+    "users": []
   }
 }
 ```
@@ -226,15 +279,19 @@ The admin backend is configured in `websites/env-dev.json`:
 **Configuration options**:
 - `enabled`: Set to `true` to start the admin server
 - `port`: Port for admin interface (default: 8081)
-- `password`: Admin login password (change this!)
-- `database.name`: Database name for admin data (default: stencil_admin)
+- `password`: Legacy superadmin password (auto-generated on first run if empty)
+- `sessionKey`: 32-byte session encryption key (auto-generated if empty)
+- `csrfKey`: 32-byte CSRF protection key (auto-generated if empty)
+- `users`: Array of additional admin users with per-site permissions
+
+**Note**: Leave `password`, `sessionKey`, and `csrfKey` empty - they will be automatically generated and saved on first run.
 
 ### Accessing the Admin
 
 1. Start the server: `./stencil2 serve`
 2. Visit: `http://localhost:8081/login`
-3. Enter your password
-4. You'll see the dashboard with all your websites
+3. Enter your username and password (or use superadmin password)
+4. You'll see the dashboard with all your websites (or assigned websites for regular users)
 
 ### Admin Features
 
@@ -283,6 +340,15 @@ The admin backend is configured in `websites/env-dev.json`:
 - Track first and last order dates
 - Calculate average order value
 
+**Message/Contact Form Management**:
+- View all contact form submissions
+- Mark messages as read/unread
+- Reply to messages via email (AWS SES integration)
+- Automatic IMAP polling to detect customer replies (every 5 minutes)
+- Thread view showing entire conversation history
+- Delete messages
+- Filter by read/unread status
+
 **SMS Signups Management**:
 - View all SMS signups
 - Filter by country code, source, and date range
@@ -290,6 +356,11 @@ The admin backend is configured in `websites/env-dev.json`:
 - Export filtered data to CSV
 - Delete signups
 - Track signup source (which page/form)
+
+**SMS Campaigns (Marketing)**:
+- Send bulk SMS campaigns to all signups
+- Campaign form with message preview
+- Track campaign sending status
 
 **Category & Collection Management**:
 - Create and delete article categories
@@ -313,19 +384,27 @@ The admin backend is configured in `websites/env-dev.json`:
 
 ### Admin Database
 
-The admin uses its own database (`stencil_admin` by default) which stores:
-- `admin_websites` - Registry of all websites
-- `admin_activity_log` - Audit log of all admin actions
+The admin uses its own database determined by reading website configurations from the filesystem. Each website's content (articles, products, messages) is stored in that website's own database, keeping data completely isolated.
 
-Each website's content (articles, products) is stored in that website's own database, keeping data isolated.
+**Website Discovery**: The admin scans the `websites/` directory for website configurations and connects to each database as needed.
 
-### Security Notes
+### IMAP Email Polling
 
-- **Change the default password** in `env-dev.json`
-- Admin uses session-based authentication (24-hour sessions)
-- Sessions are stored in memory (will be lost on server restart)
-- For production, use HTTPS and a strong password
-- Consider adding IP restrictions via firewall
+**Automatic Reply Detection**: The admin server polls IMAP inboxes every 5 minutes for websites that have IMAP configured:
+
+1. Checks each website's IMAP inbox for new emails
+2. Matches incoming emails to existing message threads (by subject/message ID)
+3. Automatically adds replies to the message thread in the admin
+4. Logs polling activity and errors
+
+**Configuration**: Set IMAP details in the website settings (admin UI or config file):
+- IMAP Server (e.g., `imap.gmail.com`)
+- IMAP Port (e.g., `993`)
+- IMAP Username
+- IMAP Password
+- Use TLS (true/false)
+
+This allows seamless two-way communication through the admin interface.
 
 ## Site Types
 
@@ -435,18 +514,46 @@ Located at `websites/env-dev.json` or `websites/env-prod.json`:
 
 ```json
 {
+  "baseUrl": "",
   "database": {
-    "host": "localhost",      // Database host
-    "user": "root",            // Database user
-    "port": "3306",            // Database port
-    "password": "",            // Database password
-    "name": "stencil2"         // Root database name
+    "host": "localhost",
+    "user": "root",
+    "port": "3306",
+    "password": "your-db-password"
   },
   "http": {
-    "port": "80"               // HTTP server port
+    "port": "80"
+  },
+  "admin": {
+    "enabled": true,
+    "port": "8081",
+    "password": "",
+    "sessionKey": "",
+    "csrfKey": "",
+    "users": [
+      {
+        "username": "editor",
+        "passwordHash": "$2a$12$...",
+        "allSites": false,
+        "siteIds": ["site1.com", "site2.com"]
+      }
+    ]
   }
 }
 ```
+
+**Environment-Level Fields**:
+- `baseUrl` - Optional base URL for the platform
+- `database.*` - **Shared database credentials** used for all website databases
+- `http.port` - HTTP server port (default: 80)
+- `admin.enabled` - Enable admin backend (default: false)
+- `admin.port` - Admin server port (default: 8081)
+- `admin.password` - Legacy superadmin password (auto-generated on first run)
+- `admin.sessionKey` - 32-byte session encryption key (auto-generated)
+- `admin.csrfKey` - 32-byte CSRF protection key (auto-generated)
+- `admin.users` - Array of additional admin users with role-based access
+
+**Note**: Database credentials are shared across all websites. Each website specifies only its database **name** in its own config file.
 
 ### Website Configuration
 
@@ -503,7 +610,7 @@ Located at `websites/{site}/config-dev.json` or `websites/{site}/config-prod.jso
 |-------|-------------|
 | `siteName` | Domain name for the website |
 | `apiVersion` | API version (currently only v1 supported) |
-| `database.name` | Site-specific database name |
+| `database.name` | **Site-specific database name** (uses credentials from environment config) |
 | `mediaProxyUrl` | Optional media proxy URL for image resizing |
 | `http.address` | Host header for routing requests |
 | `stripe.publishableKey` | Stripe publishable key for frontend |
@@ -511,14 +618,24 @@ Located at `websites/{site}/config-dev.json` or `websites/{site}/config-prod.jso
 | `shippo.apiKey` | Shippo API key for shipping |
 | `shippo.labelFormat` | Label format (PDF, PNG, ZPLII) |
 | `email.provider` | Email provider (currently only "ses" supported) |
-| `email.fromAddress` | Sender email address |
-| `email.fromName` | Sender name |
-| `email.replyTo` | Reply-to email address |
+| `email.fromAddress` | **Site-specific** sender email address |
+| `email.fromName` | **Site-specific** sender name |
+| `email.replyTo` | **Site-specific** reply-to email address |
+| `email.imapServer` | IMAP server for polling replies (e.g., `imap.gmail.com`) |
+| `email.imapPort` | IMAP port (e.g., `993`) |
+| `email.imapUsername` | IMAP username |
+| `email.imapPassword` | IMAP password |
+| `email.imapUseTLS` | Use TLS for IMAP (true/false) |
 | `ecommerce.taxRate` | Tax rate as decimal (0.08 = 8%) |
 | `ecommerce.flatShippingCost` | Flat shipping cost (if not using Shippo) |
 | `earlyAccess.enabled` | Enable early access password protection |
 | `earlyAccess.password` | Password for early access |
 | `shipFrom.*` | Default shipping origin address for Shippo |
+
+**Important Configuration Notes**:
+- **Database credentials** (host, user, port, password) are shared from the environment config
+- **Database name** is specified per-site for isolation
+- **Email configuration** is per-site, allowing each website to have its own sender details and IMAP inbox
 
 ### Template Configuration
 
@@ -1009,6 +1126,123 @@ CREATE TABLE analytics_events (
 
 The analytics JavaScript file is automatically copied from `frontend/static/analytics.js` to each website's `public/` directory on server startup, ensuring all sites stay in sync with the latest tracker version.
 
+## Contact Form System
+
+Stencil2 includes a built-in contact form system with spam protection, admin management, and two-way email threading.
+
+### Features
+
+**Security & Spam Protection**:
+- **Rate Limiting**: 5 submissions per hour per IP address (prevents spam floods)
+- **Honeypot Field**: Bot detection using invisible "website" field
+- **Automatic Cleanup**: Rate limiter cleans up old entries every 10 minutes
+- **Input Validation**: Name, email, and message required
+
+**Admin Management**:
+- View all contact form submissions in admin panel
+- Filter by read/unread status
+- Reply directly from admin interface (via AWS SES)
+- Delete messages
+- Automatic read status when replying
+
+**Two-Way Email Communication**:
+- **IMAP Polling**: Automatically checks IMAP inbox every 5 minutes
+- **Reply Threading**: Matches customer replies to original messages
+- **Conversation View**: See entire message thread in admin
+- **Reply Counter**: Shows number of replies per message
+
+### Frontend API
+
+**POST** `/api/v1/contact` - Submit contact form
+
+Request body:
+```json
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "message": "I have a question about...",
+  "website": ""
+}
+```
+
+**Important**: Include the `website` field (should be empty) for honeypot spam protection.
+
+**Rate Limiting**: 5 submissions per hour per IP. Returns 429 if limit exceeded.
+
+**Response**: `200 OK` on success, `429 Too Many Requests` if rate limited, `400 Bad Request` if honeypot triggered.
+
+### Database Tables
+
+```sql
+-- Contact Messages
+CREATE TABLE messages (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    status VARCHAR(20) DEFAULT 'unread',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_status (status),
+    INDEX idx_created_at (created_at),
+    INDEX idx_email (email)
+);
+
+-- Message Replies (both admin and customer replies)
+CREATE TABLE message_replies (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    message_id INT NOT NULL,
+    reply_text TEXT NOT NULL,
+    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    sent_by VARCHAR(100) DEFAULT 'admin',
+    INDEX idx_message_id (message_id),
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+);
+```
+
+### Example Contact Form
+
+```html
+<form id="contact-form">
+  <input type="text" name="name" placeholder="Your Name" required>
+  <input type="email" name="email" placeholder="Your Email" required>
+  <textarea name="message" placeholder="Your Message" required></textarea>
+
+  <!-- Honeypot field (hidden with CSS) -->
+  <input type="text" name="website" style="display:none;">
+
+  <button type="submit">Send Message</button>
+</form>
+
+<script>
+document.getElementById('contact-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const formData = {
+    name: e.target.name.value,
+    email: e.target.email.value,
+    message: e.target.message.value,
+    website: e.target.website.value
+  };
+
+  const response = await fetch('/api/v1/contact', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(formData)
+  });
+
+  if (response.ok) {
+    alert('Message sent successfully!');
+    e.target.reset();
+  } else if (response.status === 429) {
+    alert('Too many submissions. Please try again later.');
+  } else {
+    alert('Failed to send message. Please try again.');
+  }
+});
+</script>
+```
+
 ## API Endpoints
 
 Stencil2 provides a comprehensive RESTful JSON API (v1) for all configured websites.
@@ -1188,7 +1422,7 @@ Request body:
 
 ---
 
-### Marketing Endpoints
+### Marketing & Communication Endpoints
 
 **POST** `/api/v1/sms-signup` - Submit SMS signup
 
@@ -1201,6 +1435,20 @@ Request body:
   "source": "homepage-banner"
 }
 ```
+
+**POST** `/api/v1/contact` - Submit contact form
+
+Request body:
+```json
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "message": "I have a question...",
+  "website": ""
+}
+```
+
+**Rate Limiting**: 5 submissions per hour per IP address. Includes honeypot spam protection.
 
 ---
 
@@ -1527,9 +1775,17 @@ CREATE TABLE orders (
     INDEX idx_customer_id (customer_id),
     INDEX idx_customer_email (customer_email),
     INDEX idx_status (status),
+    INDEX idx_payment_status (payment_status),
     INDEX idx_created_at (created_at),
+    INDEX idx_orders_customer_date (customer_id, created_at),
+    INDEX idx_orders_status_date (payment_status, created_at),
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
 );
+```
+
+**Performance Notes**:
+- Composite indexes on `(customer_id, created_at)` and `(payment_status, created_at)` optimize common admin queries
+- These indexes improve performance when filtering orders by customer or status with date ranges
 
 -- Order Items
 CREATE TABLE order_items (
@@ -1547,7 +1803,7 @@ CREATE TABLE order_items (
 );
 ```
 
-### Marketing Tables
+### Marketing & Communication Tables
 
 ```sql
 -- SMS Signups
@@ -1562,6 +1818,31 @@ CREATE TABLE sms_signups (
     INDEX idx_created_at (created_at),
     INDEX idx_country_code (country_code)
 );
+
+-- Contact Messages
+CREATE TABLE messages (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    status VARCHAR(20) DEFAULT 'unread',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_status (status),
+    INDEX idx_created_at (created_at),
+    INDEX idx_email (email)
+);
+
+-- Message Replies (admin and customer replies via IMAP)
+CREATE TABLE message_replies (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    message_id INT NOT NULL,
+    reply_text TEXT NOT NULL,
+    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    sent_by VARCHAR(100) DEFAULT 'admin',
+    INDEX idx_message_id (message_id),
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+);
 ```
 
 ### Analytics Tables
@@ -1571,6 +1852,7 @@ CREATE TABLE sms_signups (
 CREATE TABLE analytics_pageviews (
     id INT PRIMARY KEY AUTO_INCREMENT,
     session_id VARCHAR(100),
+    visitor_id VARCHAR(100),
     path VARCHAR(500),
     referrer VARCHAR(500),
     user_agent TEXT,
@@ -1580,8 +1862,11 @@ CREATE TABLE analytics_pageviews (
     device_type VARCHAR(20),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_session (session_id),
+    INDEX idx_visitor (visitor_id),
     INDEX idx_path (path),
-    INDEX idx_created (created_at)
+    INDEX idx_created (created_at),
+    INDEX idx_pageviews_date_visitor (created_at, visitor_id),
+    INDEX idx_pageviews_date_session (created_at, session_id)
 );
 
 -- Custom Events
@@ -1599,32 +1884,41 @@ CREATE TABLE analytics_events (
 );
 ```
 
-### Admin Tables
+**Performance Notes**:
+- Composite indexes on `(created_at, visitor_id)` and `(created_at, session_id)` optimize dashboard queries that filter by date range
+- These indexes significantly improve query performance for date-filtered analytics reports
 
-The admin uses its own database (`stencil_admin` by default):
+### Admin Configuration
 
-```sql
--- Admin Website Registry
-CREATE TABLE admin_websites (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    site_name VARCHAR(255) UNIQUE,
-    database_name VARCHAR(255),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+**Note**: Starting with recent versions, the admin no longer uses a separate database. Website configurations are discovered by scanning the filesystem (`websites/` directory) and each website connects to its own database as needed.
 
--- Admin Activity Log
-CREATE TABLE admin_activity_log (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    website_id INT,
-    action VARCHAR(255),
-    entity_type VARCHAR(100),
-    entity_id INT,
-    details TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_website_id (website_id),
-    INDEX idx_created_at (created_at)
-);
+**Configuration Storage**:
+- Admin settings (password, session keys, users) are stored in `websites/env-dev.json` or `websites/env-prod.json`
+- Website configurations are stored in `websites/{site}/config-{env}.json`
+- No central admin database required
+
+**Multi-User System**:
+Admin users are configured in the environment config:
+```json
+{
+  "admin": {
+    "users": [
+      {
+        "username": "editor",
+        "passwordHash": "$2a$12$...",
+        "allSites": false,
+        "siteIds": ["example.com", "shop.example.com"]
+      }
+    ]
+  }
+}
 ```
+
+Each user can have:
+- `username` - Login username
+- `passwordHash` - Bcrypt-hashed password
+- `allSites` - If true, user can access all websites (superadmin)
+- `siteIds` - Array of specific website IDs the user can access
 
 ## Deployment
 
@@ -1683,6 +1977,37 @@ server {
 }
 ```
 
+### SSL Certificates (Let's Encrypt)
+
+**Recommended Approach**: Use **Nginx with Certbot** for SSL certificate management:
+
+1. **Install Certbot**:
+   ```bash
+   sudo apt install certbot python3-certbot-nginx
+   ```
+
+2. **Obtain Certificate** (automatic Nginx configuration):
+   ```bash
+   sudo certbot --nginx -d example.com -d www.example.com
+   ```
+
+3. **Auto-Renewal**: Certbot automatically sets up a systemd timer for renewal
+   ```bash
+   sudo systemctl status certbot.timer
+   ```
+
+**Benefits**:
+- Free SSL certificates (90-day validity, auto-renewed)
+- Automatic Nginx configuration
+- No application code changes needed
+- Industry-standard approach for multi-site hosting
+- Handles multiple domains easily
+
+**Certificate Renewal**:
+- Certbot automatically renews certificates before expiry (typically at 60 days)
+- Manual renewal: `sudo certbot renew`
+- Test renewal: `sudo certbot renew --dry-run`
+
 ## Development
 
 ### File Watching
@@ -1726,6 +2051,54 @@ The `{{ hash }}` function generates an MD5 hash of your `/public/` directory:
 When files change, the hash updates automatically, busting browser caches.
 
 ## Recent Updates & Bug Fixes
+
+### Security Hardening & Admin Improvements (December 2024)
+
+Complete security overhaul of the admin system with production-grade authentication and protection:
+
+**Security Features Added**:
+- **Bcrypt Password Hashing**: Cost factor 12 for all admin passwords (replaced plaintext storage)
+- **Encrypted Sessions**: 32-byte AES session keys with secure cookie flags (HttpOnly, Secure, SameSite)
+- **CSRF Protection**: Cross-Site Request Forgery protection on all admin forms (production mode only)
+- **Auto Setup Wizard**: First-run password setup with confirmation and key generation
+- **Multi-User Support**: Added user management system with per-site access controls
+- **Rate Limiting**: Contact form rate limiting (5 submissions/hour/IP) with automatic cleanup
+- **Honeypot Protection**: Bot detection on contact forms
+
+**Configuration Changes**:
+- Added `sessionKey` and `csrfKey` to admin config (auto-generated on first run)
+- Added `users` array for multi-user admin access
+- Moved database credentials to environment config (shared across all sites)
+- Each site config now only specifies database name (not credentials)
+- Email configuration remains per-site for flexibility
+
+**Performance Improvements**:
+- Added composite database indexes for analytics queries: `(created_at, visitor_id)` and `(created_at, session_id)`
+- Added composite database indexes for order queries: `(customer_id, created_at)` and `(payment_status, created_at)`
+- Significantly faster admin dashboard rendering with date-filtered queries
+
+**Contact/Message System**:
+- Built-in contact form with spam protection
+- Admin interface for managing messages
+- Two-way email threading via IMAP polling (every 5 minutes)
+- Reply functionality with conversation view
+
+**Files Updated**:
+- `admin/auth.go` - Bcrypt implementation and session management
+- `admin/server.go` - CSRF protection and session setup
+- `admin/handlers.go` - Updated all password-related handlers
+- `cmd/serve.go` - Auto setup wizard for passwords and keys
+- `utils/crypto.go` - Added key generation and password utilities
+- `configs/environment.go` - Updated config structure
+- `database/analytics.go` - Added composite indexes
+- `database/ecommerce.go` - Added composite indexes
+- `database/messages.go` - New message/reply tables
+- `api/v1.go` - Contact form endpoint with rate limiting
+
+**Migration Notes**:
+- Existing plaintext passwords need to be regenerated (auto-prompts on first run)
+- Session and CSRF keys are auto-generated if missing
+- No database schema changes required (composite indexes added via ALTER TABLE)
 
 ### Product Variant System Refactoring (December 2024)
 
