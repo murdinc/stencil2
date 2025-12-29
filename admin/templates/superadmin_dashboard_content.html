@@ -41,11 +41,13 @@
                             <strong style="color: #667eea;">{{.Website.SiteName}}</strong>
                         </a>
                         <br>
-                        <code style="font-size: 10px; color: #666;">{{.Website.DatabaseName}}</code>
+                        <span style="font-size: 9px; color: #999; text-transform: uppercase; letter-spacing: 0.5px;">DB:</span> <code style="font-size: 10px; color: #666;">{{.Website.DatabaseName}}</code>
+                        {{if ne .Website.Directory .Website.SiteName}}
                         <br>
-                        <code style="font-size: 10px; color: #666;">{{.Website.Directory}}</code>
+                        <span style="font-size: 9px; color: #999; text-transform: uppercase; letter-spacing: 0.5px;">Dir:</span> <code style="font-size: 10px; color: #666;">{{.Website.Directory}}</code>
+                        {{end}}
                         <br>
-                        <span style="font-size: 10px; color: #999;">{{.Website.HTTPAddress}}</span>
+                        <span style="font-size: 9px; color: #999; text-transform: uppercase; letter-spacing: 0.5px;">URL:</span> <span style="font-size: 10px; color: #666;">{{.Website.HTTPAddress}}</span>
                     </td>
                     <!-- E-commerce -->
                     <td style="text-align: center; background: #fef5e7;"><a href="/site/{{.Website.DatabaseName}}/orders" style="text-decoration: none; color: inherit;">{{.OrdersPaid}}</a></td>
