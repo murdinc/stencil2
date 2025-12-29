@@ -91,6 +91,24 @@
     </div>
 </div>
 
+<!-- Geographic Distribution -->
+<div class="card" style="margin-bottom: 30px;">
+    <h3 style="margin-bottom: 20px;">Geographic Distribution</h3>
+    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+        <div>
+            <div id="locationMap" style="height: 400px; border-radius: 6px; overflow: hidden;"></div>
+        </div>
+        <div>
+            <h4 style="font-size: 14px; color: #666; margin-bottom: 12px; font-weight: 600;">Top Countries</h4>
+            <div id="countriesList" style="font-size: 14px;">
+                <div style="text-align: center; padding: 40px; color: #999;">
+                    Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- E-Commerce Metrics -->
 {{if .HasOrders}}
 <div class="card" style="margin-bottom: 30px;">
@@ -314,7 +332,12 @@
 {{end}}
 
 <!-- Chart.js -->
+<!-- Leaflet CSS for map visualization -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+<!-- Chart.js and Leaflet libraries -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
 // Parse time series data from server
 const timeSeriesData = JSON.parse({{.TimeSeriesJSON}});
@@ -856,6 +879,89 @@ new Chart(growthCtx, {
         }
     }
 });
+
+// Geographic Distribution Map
+(function() {
+    // Initialize map centered on world view
+    const map = L.map('locationMap', {
+        zoomControl: true,
+        scrollWheelZoom: true
+    }).setView([20, 0], 2);
+
+    // Add OpenStreetMap tiles
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19
+    }).addTo(map);
+
+    // Fetch location data from API
+    const urlParams = new URLSearchParams(window.location.search);
+    const days = urlParams.get('days') || '30';
+
+    fetch(`analytics/location-data?days=${days}`)
+        .then(response => response.json())
+        .then(data => {
+            const locations = data.locations || [];
+            const countries = data.countries || [];
+
+            if (locations.length === 0) {
+                document.getElementById('countriesList').innerHTML =
+                    '<div style="text-align: center; padding: 40px; color: #999;">No location data available yet</div>';
+                return;
+            }
+
+            // Add markers for each location
+            locations.forEach(loc => {
+                const marker = L.circleMarker([loc.latitude, loc.longitude], {
+                    radius: Math.log(loc.pageviews + 1) * 2 + 4, // Size based on pageviews
+                    fillColor: '#2563eb',
+                    color: '#fff',
+                    weight: 2,
+                    opacity: 1,
+                    fillOpacity: 0.7
+                }).addTo(map);
+
+                // Create popup with location details
+                const popupContent = `
+                    <div style="padding: 4px;">
+                        <strong>${loc.city || 'Unknown City'}, ${loc.country || 'Unknown'}</strong><br>
+                        <div style="margin-top: 6px; font-size: 13px;">
+                            <div>Pageviews: <strong>${loc.pageviews.toLocaleString()}</strong></div>
+                            <div>Visitors: <strong>${loc.unique_visitors.toLocaleString()}</strong></div>
+                        </div>
+                    </div>
+                `;
+                marker.bindPopup(popupContent);
+            });
+
+            // Render top countries list
+            let countriesHTML = '';
+            countries.forEach((country, index) => {
+                const percentage = ((country.pageviews / {{index .Stats "total_views"}}) * 100).toFixed(1);
+                countriesHTML += `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #f3f4f6;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="font-weight: 600; color: #666; min-width: 20px;">${index + 1}</div>
+                            <div>
+                                <div style="font-weight: 500;">${country.country}</div>
+                                <div style="font-size: 12px; color: #999;">${country.pageviews.toLocaleString()} views</div>
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-weight: 600; color: #2563eb;">${percentage}%</div>
+                            <div style="font-size: 12px; color: #999;">${country.unique_visitors} visitors</div>
+                        </div>
+                    </div>
+                `;
+            });
+            document.getElementById('countriesList').innerHTML = countriesHTML;
+        })
+        .catch(error => {
+            console.error('Error fetching location data:', error);
+            document.getElementById('countriesList').innerHTML =
+                '<div style="text-align: center; padding: 40px; color: #ef4444;">Failed to load location data</div>';
+        });
+})();
 </script>
 
 {{end}}

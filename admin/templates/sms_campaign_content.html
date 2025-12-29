@@ -117,6 +117,7 @@
 </div>
 
 <form method="POST" action="/site/{{.Website.ID}}/sms-campaigns/send">
+    {{ .CSRFField }}
     <!-- Hidden fields to preserve filters -->
     <input type="hidden" name="country_code" value="{{.Filters.CountryCode}}">
     <input type="hidden" name="source" value="{{.Filters.Source}}">

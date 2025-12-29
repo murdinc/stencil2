@@ -459,13 +459,8 @@ if (timeSeriesData && timeSeriesData.length > 0) {
     // Parse engagement data
     const engagementData = JSON.parse({{.EngagementJSON}});
 
-    // Debug: Log raw data
-    console.log('Raw Engagement Data:', engagementData);
-    console.log('Total days in data:', engagementData.length);
-
     // Limit to last 7 days only for the overview chart
     const last7Days = engagementData.slice(-7);
-    console.log('Last 7 days:', last7Days);
 
     const paidOrders = last7Days.map(d => d.paid_orders);
     const pendingOrders = last7Days.map(d => d.pending_orders);
@@ -477,11 +472,6 @@ if (timeSeriesData && timeSeriesData.length > 0) {
 
     // Use labels from last 7 days
     const last7DaysLabels = last7Days.map(d => d.date);
-
-    // Debug: Log the data
-    console.log('Overview Paid Orders:', paidOrders);
-    console.log('Overview Pending Orders:', pendingOrders);
-    console.log('Total Pending:', pendingOrders.reduce((a, b) => a + b, 0));
 
     new Chart(ordersCtx, {
         type: 'bar',

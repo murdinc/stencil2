@@ -7,6 +7,7 @@
 <div class="card">
     <h3>Upload New Image</h3>
     <form method="POST" action="/site/{{.Website.ID}}/images/upload" enctype="multipart/form-data">
+        {{ .CSRFField }}
         <div class="form-group">
             <label>Select Image:</label>
             <input type="file" name="image" accept="image/*" required>
@@ -47,6 +48,7 @@
                 <td>{{formatBytes .Size}}</td>
                 <td>
                     <form method="POST" action="/site/{{$.Website.ID}}/images/{{.ID}}/delete" style="display:inline;" onsubmit="return confirm('Delete this image?');">
+                        {{ $.CSRFField }}
                         <button type="submit" class="btn btn-sm btn-danger">Delete</button>
                     </form>
                 </td>

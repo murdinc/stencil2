@@ -69,6 +69,7 @@
                 <th>Phone</th>
                 <th>Email</th>
                 <th>Source</th>
+                <th>Verified</th>
                 <th>Created At</th>
                 <th>Actions</th>
             </tr>
@@ -80,9 +81,20 @@
                 <td><strong>{{.CountryCode}} {{.Phone}}</strong></td>
                 <td>{{if .Email}}{{.Email}}{{else}}-{{end}}</td>
                 <td>{{if .Source}}{{.Source}}{{else}}-{{end}}</td>
+                <td>
+                    {{if .Verified}}
+                    <span style="display: inline-block; padding: 4px 8px; background: #e6ffed; color: #48bb78; border: 1px solid #48bb78; border-radius: 4px; font-size: 12px; font-weight: 600;">Yes</span>
+                    {{else}}
+                    <span style="display: inline-block; padding: 4px 8px; background: #fff4e6; color: #f59e0b; border: 1px solid #f59e0b; border-radius: 4px; font-size: 12px; font-weight: 600;">No</span>
+                    {{end}}
+                </td>
                 <td>{{.CreatedAt.Format "Jan 2, 2006 3:04 PM"}}</td>
                 <td class="actions">
+                    {{if not .Verified}}
+                    <button onclick="resendVerification({{.ID}})" class="btn btn-sm" style="background: #4299e1;">Resend Code</button>
+                    {{end}}
                     <form method="POST" action="/site/{{$.Website.ID}}/sms-signups/{{.ID}}/delete" style="display: inline;">
+                        {{ $.CSRFField }}
                         <button type="submit" class="btn btn-sm" style="background: #dc2626;" onclick="return confirm('Are you sure you want to delete this signup?')">Delete</button>
                     </form>
                 </td>
@@ -97,4 +109,25 @@
     </div>
     {{end}}
 </div>
+
+<script>
+function resendVerification(signupId) {
+    if (!confirm('Resend verification code to this phone number?')) return;
+
+    fetch(`/site/{{.Website.ID}}/sms-signups/${signupId}/resend`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Verification code sent successfully!');
+        } else {
+            alert('Error: ' + (data.error || 'Failed to send code'));
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error.message);
+    });
+}
+</script>
 {{end}}

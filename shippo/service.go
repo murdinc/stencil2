@@ -277,3 +277,23 @@ func (c *Client) GetTracking(carrier, trackingNumber string) (*TrackingResponse,
 
 	return &trackingResp, nil
 }
+
+// RefundLabel refunds/voids a shipping label
+func (c *Client) RefundLabel(transactionID string) error {
+	endpoint := fmt.Sprintf("/transactions/%s/refund", transactionID)
+
+	var refundResp struct {
+		ObjectID string `json:"object_id"`
+		Status   string `json:"status"`
+	}
+
+	if err := c.doRequest("POST", endpoint, nil, &refundResp); err != nil {
+		return err
+	}
+
+	if refundResp.Status != "SUCCESS" {
+		return fmt.Errorf("label refund failed: %s", refundResp.Status)
+	}
+
+	return nil
+}

@@ -7,6 +7,7 @@
 <div class="card">
     <h3>Create New Collection</h3>
     <form method="POST" action="/site/{{.Website.ID}}/collections/new">
+        {{ .CSRFField }}
         <div class="form-group">
             <label>Collection Name:</label>
             <input type="text" name="name" placeholder="Enter collection name" required>
@@ -36,15 +37,18 @@
                 <td>{{.Status}}</td>
                 <td style="white-space:nowrap;">
                     <form method="POST" action="/site/{{$.Website.ID}}/collections/{{.ID}}/reorder/up" style="display:inline;">
+                        {{ $.CSRFField }}
                         <button type="submit" class="btn btn-sm btn-success" style="padding:2px 8px;">↑</button>
                     </form>
                     <form method="POST" action="/site/{{$.Website.ID}}/collections/{{.ID}}/reorder/down" style="display:inline;">
+                        {{ $.CSRFField }}
                         <button type="submit" class="btn btn-sm btn-success" style="padding:2px 8px;">↓</button>
                     </form>
                 </td>
                 <td>
                     <a href="/site/{{$.Website.ID}}/collections/{{.ID}}/edit" class="btn btn-sm btn-primary" style="margin-right:5px;">Edit</a>
                     <form method="POST" action="/site/{{$.Website.ID}}/collections/{{.ID}}/delete" style="display:inline;" onsubmit="return confirm('Delete this collection?');">
+                        {{ $.CSRFField }}
                         <button type="submit" class="btn btn-sm btn-danger">Delete</button>
                     </form>
                 </td>

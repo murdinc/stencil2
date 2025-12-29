@@ -19,6 +19,7 @@
         </div>
         <div style="display: flex; gap: 8px;">
             <form action="/site/{{.Website.ID}}/messages/{{.Message.ID}}/toggle-read" method="POST">
+                {{ .CSRFField }}
                 {{if eq .Message.Status "read"}}
                 <button type="submit" class="btn" style="background: #718096;">Mark as Unread</button>
                 {{else}}
@@ -26,6 +27,7 @@
                 {{end}}
             </form>
             <form action="/site/{{.Website.ID}}/messages/{{.Message.ID}}/delete" method="POST" onsubmit="return confirm('Are you sure you want to delete this message and all replies? This cannot be undone.');">
+                {{ .CSRFField }}
                 <button type="submit" class="btn" style="background: #e53e3e; border-color: #e53e3e; color: white;">Delete Message</button>
             </form>
         </div>
@@ -71,6 +73,7 @@
         <div class="card">
             <h3>Send Reply</h3>
             <form action="/site/{{.Website.ID}}/messages/{{.Message.ID}}/reply" method="POST">
+                {{ .CSRFField }}
                 <div class="form-group">
                     <label for="reply_text">Your Reply</label>
                     <textarea id="reply_text" name="reply_text" required placeholder="Type your reply here...">{{.PreservedReply}}</textarea>

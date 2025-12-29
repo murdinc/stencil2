@@ -13,12 +13,16 @@ require (
 	github.com/go-chi/chi/v5 v5.0.8
 	github.com/go-chi/hostrouter v0.2.0
 	github.com/go-sql-driver/mysql v1.7.1
+	github.com/gorilla/csrf v1.7.3
+	github.com/gorilla/sessions v1.4.0
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	github.com/radovskyb/watcher v1.0.7
 	github.com/spf13/cobra v1.7.0
 	github.com/stripe/stripe-go/v78 v78.12.0
 	github.com/tdewolff/minify/v2 v2.12.7
+	golang.org/x/crypto v0.12.0
 	golang.org/x/net v0.14.0
+	golang.org/x/term v0.38.0
 )
 
 require (
@@ -26,19 +30,17 @@ require (
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21 // indirect
 	github.com/google/uuid v1.3.0 // indirect
-	github.com/gorilla/csrf v1.7.3 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
-	github.com/gorilla/sessions v1.4.0 // indirect
 	github.com/huandu/xstrings v1.4.0 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
+	github.com/oschwald/geoip2-golang v1.13.0 // indirect
+	github.com/oschwald/maxminddb-golang v1.13.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/stretchr/testify v1.8.3 // indirect
+	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/tdewolff/parse/v2 v2.6.6 // indirect
-	golang.org/x/crypto v0.12.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
-	golang.org/x/term v0.38.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 )

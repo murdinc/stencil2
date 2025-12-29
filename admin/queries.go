@@ -8,11 +8,15 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/murdinc/stencil2/configs"
 	"github.com/murdinc/stencil2/shippo"
 	"github.com/murdinc/stencil2/structs"
+	"github.com/murdinc/stencil2/twilio"
+	"github.com/stripe/stripe-go/v78"
+	"github.com/stripe/stripe-go/v78/refund"
 )
 
 // Website represents a managed website
@@ -176,10 +180,13 @@ type Order struct {
 	PaymentStatus        string    `json:"paymentStatus"`
 	FulfillmentStatus    string    `json:"fulfillmentStatus"`
 	PaymentMethod        string    `json:"paymentMethod"`
+	StripePaymentIntent  string    `json:"stripePaymentIntent"`
+	RefundedAmount       float64   `json:"refundedAmount"`
 	ShippingLabelCost    *float64  `json:"shippingLabelCost"`
 	TrackingNumber       string    `json:"trackingNumber"`
 	ShippingCarrier      string    `json:"shippingCarrier"`
 	ShippingLabelURL     string    `json:"shippingLabelUrl"`
+	ShippoTransactionID  string    `json:"shippoTransactionId"`
 	Items                []OrderItem `json:"items"`
 	CreatedAt            time.Time `json:"createdAt"`
 	UpdatedAt            time.Time `json:"updatedAt"`
@@ -189,6 +196,7 @@ type Order struct {
 type OrderItem struct {
 	ID           int     `json:"id"`
 	ProductID    int     `json:"productId"`
+	VariantID    int     `json:"variantId"`
 	ProductName  string  `json:"productName"`
 	VariantTitle string  `json:"variantTitle"`
 	Quantity     int     `json:"quantity"`
@@ -247,6 +255,7 @@ type SMSSignup struct {
 	Phone       string    `json:"phone"`
 	Email       string    `json:"email"`
 	Source      string    `json:"source"`
+	Verified    bool      `json:"verified"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
@@ -2245,13 +2254,16 @@ func (s *AdminServer) GetOrder(websiteID string, orderID int) (Order, error) {
 			shipping_city, shipping_state, shipping_zip, shipping_country,
 			subtotal, tax, shipping_cost, total,
 			payment_status, fulfillment_status, payment_method,
+			stripe_payment_intent_id, refunded_amount, shipping_label_cost,
+			tracking_number, shipping_carrier, shipping_label_url, shippo_transaction_id,
 			created_at, updated_at
 		FROM orders
 		WHERE id = ?
 	`
 
 	var o Order
-	var shippingLine2, paymentMethod sql.NullString
+	var shippingLine2, paymentMethod, stripeIntent, trackingNum, carrier, labelURL, shippoTxID sql.NullString
+	var labelCost sql.NullFloat64
 
 	err = db.QueryRow(query, orderID).Scan(
 		&o.ID, &o.OrderNumber, &o.CustomerEmail, &o.CustomerName,
@@ -2259,6 +2271,8 @@ func (s *AdminServer) GetOrder(websiteID string, orderID int) (Order, error) {
 		&o.ShippingCity, &o.ShippingState, &o.ShippingZip, &o.ShippingCountry,
 		&o.Subtotal, &o.Tax, &o.ShippingCost, &o.Total,
 		&o.PaymentStatus, &o.FulfillmentStatus, &paymentMethod,
+		&stripeIntent, &o.RefundedAmount, &labelCost,
+		&trackingNum, &carrier, &labelURL, &shippoTxID,
 		&o.CreatedAt, &o.UpdatedAt,
 	)
 	if err != nil {
@@ -2267,10 +2281,18 @@ func (s *AdminServer) GetOrder(websiteID string, orderID int) (Order, error) {
 
 	o.ShippingAddressLine2 = shippingLine2.String
 	o.PaymentMethod = paymentMethod.String
+	o.StripePaymentIntent = stripeIntent.String
+	if labelCost.Valid {
+		o.ShippingLabelCost = &labelCost.Float64
+	}
+	o.TrackingNumber = trackingNum.String
+	o.ShippingCarrier = carrier.String
+	o.ShippingLabelURL = labelURL.String
+	o.ShippoTransactionID = shippoTxID.String
 
 	// Get order items
 	itemsQuery := `
-		SELECT id, product_id, product_name, variant_title, quantity, price, total
+		SELECT id, product_id, variant_id, product_name, variant_title, quantity, price, total
 		FROM order_items
 		WHERE order_id = ?
 	`
@@ -2283,16 +2305,20 @@ func (s *AdminServer) GetOrder(websiteID string, orderID int) (Order, error) {
 
 	for rows.Next() {
 		var item OrderItem
+		var variantID sql.NullInt64
 		var variantTitle sql.NullString
 
 		err := rows.Scan(
-			&item.ID, &item.ProductID, &item.ProductName, &variantTitle,
+			&item.ID, &item.ProductID, &variantID, &item.ProductName, &variantTitle,
 			&item.Quantity, &item.Price, &item.Total,
 		)
 		if err != nil {
 			return o, err
 		}
 
+		if variantID.Valid {
+			item.VariantID = int(variantID.Int64)
+		}
 		item.VariantTitle = variantTitle.String
 		o.Items = append(o.Items, item)
 	}
@@ -2433,11 +2459,12 @@ func (s *AdminServer) PurchaseShippingLabel(websiteID string, orderID int, rateI
 		    shipping_carrier = ?,
 		    shipping_label_url = ?,
 		    shipping_label_cost = ?,
+		    shippo_transaction_id = ?,
 		    updated_at = NOW()
 		WHERE id = ?
 	`
 
-	_, err = db.Exec(query, transaction.TrackingNumber, carrier, transaction.LabelURL, cost, orderID)
+	_, err = db.Exec(query, transaction.TrackingNumber, carrier, transaction.LabelURL, cost, transaction.ObjectID, orderID)
 	if err != nil {
 		return nil, err
 	}
@@ -3629,6 +3656,110 @@ func (s *AdminServer) GetRevenueMetrics(websiteID string, startDate, endDate tim
 	return metrics, nil
 }
 
+// GetLocationStats returns geographic statistics for pageviews in a date range
+func (s *AdminServer) GetLocationStats(websiteID string, startDate, endDate time.Time) ([]map[string]interface{}, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			country,
+			country_code,
+			region,
+			city,
+			latitude,
+			longitude,
+			COUNT(*) as pageviews,
+			COUNT(DISTINCT visitor_id) as unique_visitors
+		FROM analytics_pageviews
+		WHERE created_at BETWEEN ? AND ?
+		AND country_code IS NOT NULL
+		AND latitude IS NOT NULL
+		AND longitude IS NOT NULL
+		GROUP BY country, country_code, region, city, latitude, longitude
+		ORDER BY pageviews DESC
+	`
+
+	rows, err := db.Query(query, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var locations []map[string]interface{}
+	for rows.Next() {
+		var country, countryCode, region, city string
+		var latitude, longitude float64
+		var pageviews, uniqueVisitors int
+		err := rows.Scan(&country, &countryCode, &region, &city, &latitude, &longitude, &pageviews, &uniqueVisitors)
+		if err != nil {
+			return nil, err
+		}
+		locations = append(locations, map[string]interface{}{
+			"country":          country,
+			"country_code":     countryCode,
+			"region":           region,
+			"city":             city,
+			"latitude":         latitude,
+			"longitude":        longitude,
+			"pageviews":        pageviews,
+			"unique_visitors":  uniqueVisitors,
+		})
+	}
+
+	return locations, nil
+}
+
+// GetTopCountries returns the top countries by pageviews for a date range
+func (s *AdminServer) GetTopCountries(websiteID string, startDate, endDate time.Time, limit int) ([]map[string]interface{}, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	query := `
+		SELECT
+			country,
+			country_code,
+			COUNT(*) as pageviews,
+			COUNT(DISTINCT visitor_id) as unique_visitors
+		FROM analytics_pageviews
+		WHERE created_at BETWEEN ? AND ?
+		AND country_code IS NOT NULL
+		GROUP BY country, country_code
+		ORDER BY pageviews DESC
+		LIMIT ?
+	`
+
+	rows, err := db.Query(query, startDate, endDate, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var countries []map[string]interface{}
+	for rows.Next() {
+		var country, countryCode string
+		var pageviews, uniqueVisitors int
+		err := rows.Scan(&country, &countryCode, &pageviews, &uniqueVisitors)
+		if err != nil {
+			return nil, err
+		}
+		countries = append(countries, map[string]interface{}{
+			"country":         country,
+			"country_code":    countryCode,
+			"pageviews":       pageviews,
+			"unique_visitors": uniqueVisitors,
+		})
+	}
+
+	return countries, nil
+}
+
 // Overview Dashboard Queries
 
 type OverviewStats struct {
@@ -4081,4 +4212,281 @@ func (s *AdminServer) DeleteMessage(websiteID string, messageID int) error {
 	query := `DELETE FROM messages WHERE id = ?`
 	_, err = db.Exec(query, messageID)
 	return err
+}
+
+// GetSMSSignupByID retrieves a single SMS signup by ID
+func (s *AdminServer) GetSMSSignupByID(websiteID string, signupID int) (SMSSignup, error) {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return SMSSignup{}, err
+	}
+	defer db.Close()
+
+	sqlQuery := `
+		SELECT id, COALESCE(country_code, '+1'), phone, COALESCE(email, ''), COALESCE(source, ''), verified, created_at
+		FROM sms_signups
+		WHERE id = ?
+	`
+	var signup SMSSignup
+	err = db.QueryRow(sqlQuery, signupID).Scan(&signup.ID, &signup.CountryCode, &signup.Phone, &signup.Email, &signup.Source, &signup.Verified, &signup.CreatedAt)
+	if err != nil {
+		return SMSSignup{}, err
+	}
+	return signup, nil
+}
+
+// SetSMSVerificationCode stores a verification code for an SMS signup
+func (s *AdminServer) SetSMSVerificationCode(websiteID, countryCode, phone, verificationCode string) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	sqlQuery := `
+		UPDATE sms_signups
+		SET verification_code = ?, verification_expires_at = DATE_ADD(NOW(), INTERVAL 15 MINUTE)
+		WHERE country_code = ? AND phone = ?
+	`
+	_, err = db.Exec(sqlQuery, verificationCode, countryCode, phone)
+	return err
+}
+
+// ClearOrderShippingLabel clears shipping label information from an order
+func (s *AdminServer) ClearOrderShippingLabel(websiteID string, orderID int, fulfillmentStatus string) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	sqlQuery := `
+		UPDATE orders
+		SET tracking_number = NULL,
+			shipping_carrier = NULL,
+			shipping_label_url = NULL,
+			shipping_label_cost = NULL,
+			shippo_transaction_id = NULL,
+			fulfillment_status = ?,
+			updated_at = NOW()
+		WHERE id = ?
+	`
+	_, err = db.Exec(sqlQuery, fulfillmentStatus, orderID)
+	return err
+}
+
+// GetTwilio returns a Twilio client for the given website
+func (s *AdminServer) GetTwilio(website *Website) *twilio.Client {
+	if website.TwilioAccountSID == "" || website.TwilioAuthToken == "" || website.TwilioFromPhone == "" {
+		return nil
+	}
+	return twilio.NewClient(website.TwilioAccountSID, website.TwilioAuthToken, website.TwilioFromPhone)
+}
+
+// UpdateOrderRefundedAmount updates the refunded amount for an order
+func (s *AdminServer) UpdateOrderRefundedAmount(websiteID string, orderID int, refundedAmount float64) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	sqlQuery := `
+		UPDATE orders
+		SET refunded_amount = ?,
+			updated_at = NOW()
+		WHERE id = ?
+	`
+	_, err = db.Exec(sqlQuery, refundedAmount, orderID)
+	return err
+}
+
+// UpdateOrderDetails updates customer info, shipping address, and order totals
+func (s *AdminServer) UpdateOrderDetails(websiteID string, orderID int, customerName, customerEmail string, shippingAddr map[string]string, subtotal, tax, total float64) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	sqlQuery := `
+		UPDATE orders
+		SET customer_name = ?,
+			customer_email = ?,
+			shipping_address_line1 = ?,
+			shipping_address_line2 = ?,
+			shipping_city = ?,
+			shipping_state = ?,
+			shipping_zip = ?,
+			shipping_country = ?,
+			subtotal = ?,
+			tax = ?,
+			total = ?,
+			updated_at = NOW()
+		WHERE id = ?
+	`
+	_, err = db.Exec(sqlQuery,
+		customerName, customerEmail,
+		shippingAddr["line1"], shippingAddr["line2"],
+		shippingAddr["city"], shippingAddr["state"],
+		shippingAddr["zip"], shippingAddr["country"],
+		subtotal, tax, total,
+		orderID,
+	)
+	return err
+}
+
+// UpdateOrderItems updates, deletes, and manages inventory for order items
+func (s *AdminServer) UpdateOrderItems(websiteID string, orderID int, newItems []map[string]interface{}, deletedItemIDs []string, originalItems []OrderItem) error {
+	db, err := s.GetWebsiteConnection(websiteID)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	// Create map of original items for easy lookup
+	originalItemsMap := make(map[int]OrderItem)
+	for _, item := range originalItems {
+		originalItemsMap[item.ID] = item
+	}
+
+	// Update existing items
+	for _, item := range newItems {
+		itemID := item["id"].(int)
+		quantity := item["quantity"].(int)
+		price := item["price"].(float64)
+		total := item["total"].(float64)
+
+		// Update item in database
+		sqlQuery := `
+			UPDATE order_items
+			SET quantity = ?,
+				price = ?,
+				total = ?
+			WHERE id = ? AND order_id = ?
+		`
+		_, err = db.Exec(sqlQuery, quantity, price, total, itemID, orderID)
+		if err != nil {
+			return fmt.Errorf("failed to update order item %d: %w", itemID, err)
+		}
+
+		// Update inventory if quantity changed
+		if originalItem, exists := originalItemsMap[itemID]; exists {
+			quantityDiff := quantity - originalItem.Quantity
+			if quantityDiff != 0 {
+				productID := item["product_id"].(int)
+				variantID := item["variant_id"].(int)
+
+				// Restore old quantity, deduct new quantity
+				if variantID > 0 {
+					// Update variant inventory
+					sqlQuery = `
+						UPDATE product_variants
+						SET inventory_quantity = inventory_quantity - ?
+						WHERE id = ?
+					`
+					_, err = db.Exec(sqlQuery, quantityDiff, variantID)
+				} else {
+					// Update product inventory
+					sqlQuery = `
+						UPDATE products
+						SET inventory_quantity = inventory_quantity - ?
+						WHERE id = ?
+					`
+					_, err = db.Exec(sqlQuery, quantityDiff, productID)
+				}
+				if err != nil {
+					log.Printf("Warning: Failed to update inventory for item %d: %v", itemID, err)
+				}
+			}
+		}
+	}
+
+	// Delete removed items and restore their inventory
+	for _, deletedIDStr := range deletedItemIDs {
+		deletedID, _ := strconv.Atoi(deletedIDStr)
+
+		// Find original item to restore inventory
+		if originalItem, exists := originalItemsMap[deletedID]; exists {
+			// Restore inventory
+			if originalItem.VariantID > 0 {
+				sqlQuery := `
+					UPDATE product_variants
+					SET inventory_quantity = inventory_quantity + ?
+					WHERE id = ?
+				`
+				_, err = db.Exec(sqlQuery, originalItem.Quantity, originalItem.VariantID)
+			} else {
+				sqlQuery := `
+					UPDATE products
+					SET inventory_quantity = inventory_quantity + ?
+					WHERE id = ?
+				`
+				_, err = db.Exec(sqlQuery, originalItem.Quantity, originalItem.ProductID)
+			}
+			if err != nil {
+				log.Printf("Warning: Failed to restore inventory for deleted item %d: %v", deletedID, err)
+			}
+		}
+
+		// Delete item from database
+		sqlQuery := `DELETE FROM order_items WHERE id = ? AND order_id = ?`
+		_, err = db.Exec(sqlQuery, deletedID, orderID)
+		if err != nil {
+			return fmt.Errorf("failed to delete order item %d: %w", deletedID, err)
+		}
+	}
+
+	return nil
+}
+
+// AdjustOrderPayment handles payment adjustments when order total changes
+func (s *AdminServer) AdjustOrderPayment(websiteID string, orderID int, order *Order, difference float64) error {
+	// Get website for Stripe config
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		return err
+	}
+
+	// Initialize Stripe client
+	stripe.Key = website.StripeSecretKey
+
+	if order.StripePaymentIntent == "" {
+		return fmt.Errorf("no stripe payment intent found")
+	}
+
+	if difference > 0 {
+		// Total increased - charge additional amount
+		// Note: In a real implementation, you'd need to:
+		// 1. Send a payment link to the customer
+		// 2. Or use a saved payment method if available
+		// 3. Create a new PaymentIntent for the difference
+		// For now, we'll log this and return an error
+		log.Printf("Order %d requires additional payment of $%.2f", orderID, difference)
+		return fmt.Errorf("order total increased by $%.2f - customer needs to be charged separately", difference)
+
+	} else if difference < 0 {
+		// Total decreased - issue refund
+		refundAmount := -difference
+		refundAmountCents := int64(refundAmount * 100)
+
+		refundParams := &stripe.RefundParams{
+			PaymentIntent: stripe.String(order.StripePaymentIntent),
+			Amount:        stripe.Int64(refundAmountCents),
+		}
+
+		_, err := refund.New(refundParams)
+		if err != nil {
+			return fmt.Errorf("failed to refund difference: %w", err)
+		}
+
+		// Update refunded amount in database
+		newRefundedAmount := order.RefundedAmount + refundAmount
+		err = s.UpdateOrderRefundedAmount(websiteID, orderID, newRefundedAmount)
+		if err != nil {
+			log.Printf("Refund processed but failed to update database: %v", err)
+		}
+	}
+
+	return nil
 }

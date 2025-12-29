@@ -6,6 +6,7 @@
 
 <div class="card">
     <form method="POST" action="{{.Action}}" enctype="multipart/form-data">
+        {{ .CSRFField }}
         <div class="form-group">
             <label>Title:</label>
             <input type="text" name="title" value="{{if .Article}}{{.Article.Title}}{{end}}" required>

@@ -175,10 +175,12 @@ type Order struct {
 	FulfillmentStatus    string      `json:"fulfillment_status"`
 	PaymentMethod        string      `json:"payment_method"`
 	StripePaymentIntent  string      `json:"stripe_payment_intent_id"`
+	RefundedAmount       float64     `json:"refunded_amount"`
 	ShippingLabelCost    float64     `json:"shipping_label_cost"`
 	TrackingNumber       string      `json:"tracking_number"`
 	ShippingCarrier      string      `json:"shipping_carrier"`
 	ShippingLabelURL     string      `json:"shipping_label_url"`
+	ShippoTransactionID  string      `json:"shippo_transaction_id"`
 	Items                []OrderItem `json:"items"`
 	CreatedAt            time.Time   `json:"created_at"`
 	UpdatedAt            time.Time   `json:"updated_at"`
@@ -217,6 +219,7 @@ type SMSSignup struct {
 	Phone       string    `json:"phone"`
 	Email       string    `json:"email"`
 	Source      string    `json:"source"`
+	Verified    bool      `json:"verified"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 

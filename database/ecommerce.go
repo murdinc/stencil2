@@ -1067,6 +1067,23 @@ func (db *DBConnection) UpdateOrderTrackingStatus(trackingNumber, trackingStatus
 	return err
 }
 
+// ClearOrderShippingLabel clears shipping label information from an order
+func (db *DBConnection) ClearOrderShippingLabel(orderID int, fulfillmentStatus string) error {
+	sqlQuery := `
+		UPDATE orders
+		SET tracking_number = NULL,
+		    shipping_carrier = NULL,
+		    shipping_label_url = NULL,
+		    shipping_label_cost = NULL,
+		    shippo_transaction_id = NULL,
+		    fulfillment_status = ?,
+		    updated_at = NOW()
+		WHERE id = ?
+	`
+	_, err := db.ExecuteQuery(sqlQuery, fulfillmentStatus, orderID)
+	return err
+}
+
 // GetOrderByTrackingNumber retrieves an order by tracking number
 func (db *DBConnection) GetOrderByTrackingNumber(trackingNumber string) (structs.Order, error) {
 	sqlQuery := `
@@ -1358,7 +1375,7 @@ func (db *DBConnection) UnsubscribeSMS(countryCode, phone string) error {
 // GetSMSSignups retrieves all SMS signups
 func (db *DBConnection) GetSMSSignups() ([]structs.SMSSignup, error) {
 	sqlQuery := `
-		SELECT id, COALESCE(country_code, '+1'), phone, COALESCE(email, ''), COALESCE(source, ''), created_at
+		SELECT id, COALESCE(country_code, '+1'), phone, COALESCE(email, ''), COALESCE(source, ''), verified, created_at
 		FROM sms_signups
 		ORDER BY created_at DESC
 	`
@@ -1372,7 +1389,7 @@ func (db *DBConnection) GetSMSSignups() ([]structs.SMSSignup, error) {
 	var signups []structs.SMSSignup
 	for rows.Next() {
 		var s structs.SMSSignup
-		err := rows.Scan(&s.ID, &s.CountryCode, &s.Phone, &s.Email, &s.Source, &s.CreatedAt)
+		err := rows.Scan(&s.ID, &s.CountryCode, &s.Phone, &s.Email, &s.Source, &s.Verified, &s.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -1380,6 +1397,23 @@ func (db *DBConnection) GetSMSSignups() ([]structs.SMSSignup, error) {
 	}
 
 	return signups, nil
+}
+
+// GetSMSSignupByID retrieves a single SMS signup by ID
+func (db *DBConnection) GetSMSSignupByID(signupID int) (structs.SMSSignup, error) {
+	sqlQuery := `
+		SELECT id, COALESCE(country_code, '+1'), phone, COALESCE(email, ''), COALESCE(source, ''), verified, created_at
+		FROM sms_signups
+		WHERE id = ?
+	`
+
+	var s structs.SMSSignup
+	err := db.Database.QueryRow(sqlQuery, signupID).Scan(&s.ID, &s.CountryCode, &s.Phone, &s.Email, &s.Source, &s.Verified, &s.CreatedAt)
+	if err != nil {
+		return structs.SMSSignup{}, err
+	}
+
+	return s, nil
 }
 
 // DeleteSMSSignup deletes an SMS signup by ID

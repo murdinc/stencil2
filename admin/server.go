@@ -75,6 +75,7 @@ func (s *AdminServer) setupRoutes() {
 			csrf.Path("/"),
 			csrf.SameSite(csrf.SameSiteLaxMode),
 			csrf.RequestHeader("X-CSRF-Token"),
+			csrf.TrustedOrigins([]string{"admin.sudoba.sh"}),
 		}
 
 		csrfMiddleware := csrf.Protect(s.CSRFKey, csrfOptions...)
@@ -171,10 +172,14 @@ func (s *AdminServer) setupRoutes() {
 			// Order management
 			r.Get("/orders", s.handleOrdersList)
 			r.Get("/orders/{orderId}", s.handleOrderDetail)
+			r.Get("/orders/{orderId}/edit", s.handleOrderEdit)
+			r.Post("/orders/{orderId}/update", s.handleOrderUpdate)
 			r.Get("/orders/{orderId}/packing-slip", s.handlePackingSlip)
 			r.Post("/orders/{orderId}/fulfillment", s.handleOrderFulfillmentUpdate)
 			r.Post("/orders/{orderId}/shipping/rates", s.handleShippingRates)
 			r.Post("/orders/{orderId}/shipping/purchase", s.handleShippingLabelPurchase)
+			r.Post("/orders/{orderId}/shipping/cancel", s.handleShippingLabelCancel)
+			r.Post("/orders/{orderId}/refund", s.handleOrderRefund)
 
 			// Customer management
 			r.Get("/customers", s.handleCustomersList)
@@ -190,6 +195,7 @@ func (s *AdminServer) setupRoutes() {
 			// SMS Signups (Marketing)
 			r.Get("/sms-signups", s.handleSMSSignupsList)
 			r.Post("/sms-signups/{signupId}/delete", s.handleDeleteSMSSignup)
+			r.Post("/sms-signups/{signupId}/resend", s.handleResendSMSVerification)
 			r.Get("/sms-signups/export", s.handleExportSMSSignups)
 
 			// SMS Campaigns (Marketing)
@@ -198,6 +204,7 @@ func (s *AdminServer) setupRoutes() {
 
 			// Analytics
 			r.Get("/analytics", s.handleAnalytics)
+			r.Get("/analytics/location-data", s.handleAnalyticsLocationData)
 		})
 	})
 

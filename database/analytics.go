@@ -24,6 +24,12 @@ func (db *DBConnection) InitAnalyticsTables() error {
 			ip_address VARCHAR(45) DEFAULT NULL,
 			screen_width INT DEFAULT NULL,
 			screen_height INT DEFAULT NULL,
+			country VARCHAR(100) DEFAULT NULL,
+			country_code VARCHAR(2) DEFAULT NULL,
+			region VARCHAR(100) DEFAULT NULL,
+			city VARCHAR(100) DEFAULT NULL,
+			latitude DECIMAL(10, 8) DEFAULT NULL,
+			longitude DECIMAL(11, 8) DEFAULT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			time_on_page INT DEFAULT 0,
 			INDEX idx_visitor_id (visitor_id),
@@ -33,7 +39,10 @@ func (db *DBConnection) InitAnalyticsTables() error {
 			INDEX idx_visitor_created (visitor_id, created_at),
 			INDEX idx_session_created (session_id, created_at),
 			INDEX idx_pageviews_date_visitor (created_at, visitor_id),
-			INDEX idx_pageviews_date_session (created_at, session_id)
+			INDEX idx_pageviews_date_session (created_at, session_id),
+			INDEX idx_country_code (country_code),
+			INDEX idx_city (city(100)),
+			INDEX idx_country_created (country_code, created_at)
 		)`,
 
 		// Analytics - Custom Events
@@ -64,13 +73,13 @@ func (db *DBConnection) InitAnalyticsTables() error {
 }
 
 // TrackPageView records a page view and returns the pageview ID
-func (db *DBConnection) TrackPageView(visitorID, sessionID, path, referrer, userAgent, ipAddress string, screenWidth, screenHeight int) (int64, error) {
+func (db *DBConnection) TrackPageView(visitorID, sessionID, path, referrer, userAgent, ipAddress string, screenWidth, screenHeight int, country, countryCode, region, city string, latitude, longitude *float64) (int64, error) {
 	sqlQuery := `
 		INSERT INTO analytics_pageviews
-		(visitor_id, session_id, path, referrer, user_agent, ip_address, screen_width, screen_height)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		(visitor_id, session_id, path, referrer, user_agent, ip_address, screen_width, screen_height, country, country_code, region, city, latitude, longitude)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	result, err := db.ExecuteQuery(sqlQuery, visitorID, sessionID, path, referrer, userAgent, ipAddress, screenWidth, screenHeight)
+	result, err := db.ExecuteQuery(sqlQuery, visitorID, sessionID, path, referrer, userAgent, ipAddress, screenWidth, screenHeight, country, countryCode, region, city, latitude, longitude)
 	if err != nil {
 		return 0, err
 	}
@@ -258,4 +267,96 @@ func (db *DBConnection) GetEventStats(startDate, endDate time.Time, limit int) (
 	}
 
 	return events, nil
+}
+
+// GetLocationStats returns geographic statistics for pageviews in a date range
+func (db *DBConnection) GetLocationStats(startDate, endDate time.Time) ([]map[string]interface{}, error) {
+	sqlQuery := `
+		SELECT
+			country,
+			country_code,
+			region,
+			city,
+			latitude,
+			longitude,
+			COUNT(*) as pageviews,
+			COUNT(DISTINCT visitor_id) as unique_visitors
+		FROM analytics_pageviews
+		WHERE created_at BETWEEN ? AND ?
+		AND country_code IS NOT NULL
+		AND latitude IS NOT NULL
+		AND longitude IS NOT NULL
+		GROUP BY country, country_code, region, city, latitude, longitude
+		ORDER BY pageviews DESC
+	`
+
+	rows, err := db.Database.Query(sqlQuery, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var locations []map[string]interface{}
+	for rows.Next() {
+		var country, countryCode, region, city string
+		var latitude, longitude float64
+		var pageviews, uniqueVisitors int
+		err := rows.Scan(&country, &countryCode, &region, &city, &latitude, &longitude, &pageviews, &uniqueVisitors)
+		if err != nil {
+			return nil, err
+		}
+		locations = append(locations, map[string]interface{}{
+			"country":          country,
+			"country_code":     countryCode,
+			"region":           region,
+			"city":             city,
+			"latitude":         latitude,
+			"longitude":        longitude,
+			"pageviews":        pageviews,
+			"unique_visitors":  uniqueVisitors,
+		})
+	}
+
+	return locations, nil
+}
+
+// GetTopCountries returns the top countries by pageviews for a date range
+func (db *DBConnection) GetTopCountries(startDate, endDate time.Time, limit int) ([]map[string]interface{}, error) {
+	sqlQuery := `
+		SELECT
+			country,
+			country_code,
+			COUNT(*) as pageviews,
+			COUNT(DISTINCT visitor_id) as unique_visitors
+		FROM analytics_pageviews
+		WHERE created_at BETWEEN ? AND ?
+		AND country_code IS NOT NULL
+		GROUP BY country, country_code
+		ORDER BY pageviews DESC
+		LIMIT ?
+	`
+
+	rows, err := db.Database.Query(sqlQuery, startDate, endDate, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var countries []map[string]interface{}
+	for rows.Next() {
+		var country, countryCode string
+		var pageviews, uniqueVisitors int
+		err := rows.Scan(&country, &countryCode, &pageviews, &uniqueVisitors)
+		if err != nil {
+			return nil, err
+		}
+		countries = append(countries, map[string]interface{}{
+			"country":         country,
+			"country_code":    countryCode,
+			"pageviews":       pageviews,
+			"unique_visitors": uniqueVisitors,
+		})
+	}
+
+	return countries, nil
 }

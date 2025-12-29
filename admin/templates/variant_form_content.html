@@ -6,6 +6,7 @@
 
 <div class="card">
     <form method="POST" action="{{.Action}}">
+        {{ .CSRFField }}
         <div class="form-group">
             <label>Variant Title:</label>
             <input type="text" name="title" value="{{if .Variant}}{{.Variant.Title}}{{end}}" required placeholder="e.g., Small, Large, Red, Blue">

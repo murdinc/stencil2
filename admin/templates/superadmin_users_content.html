@@ -7,6 +7,7 @@
 <div class="card">
     <h3>Create New User</h3>
     <form method="POST" action="/superadmin/users/create" style="max-width: 600px;">
+        {{ .CSRFField }}
         <div class="form-group">
             <label>Username:</label>
             <input type="text" name="username" placeholder="e.g., john" required>
@@ -66,6 +67,7 @@
                 <td>
                     <button type="button" class="btn btn-sm" onclick="toggleEdit('{{.Username}}')" style="background: #3498db; color: white; margin-right: 8px;">Edit</button>
                     <form method="POST" action="/superadmin/users/delete" style="display: inline;">
+                        {{ $.CSRFField }}
                         <input type="hidden" name="username" value="{{.Username}}">
                         <button type="submit" class="btn btn-sm" style="background: #e74c3c; color: white;" onclick="return confirm('Delete user {{.Username}}?')">Delete</button>
                     </form>
@@ -74,6 +76,7 @@
             <tr id="edit-{{.Username}}" style="display: none;">
                 <td colspan="3" style="background: #f7f9fc; padding: 20px;">
                     <form method="POST" action="/superadmin/users/update">
+                        {{ $.CSRFField }}
                         <input type="hidden" name="username" value="{{.Username}}">
 
                         <h4 style="margin-bottom: 16px; color: #2d3748;">Edit User: {{.Username}}</h4>

@@ -6,6 +6,7 @@
 
 <div class="card">
     <form method="POST" action="{{.Action}}" enctype="multipart/form-data">
+        {{ .CSRFField }}
         <div class="form-group">
             <label>Name:</label>
             <input type="text" name="name" value="{{if .Product}}{{.Product.Name}}{{end}}" required>
@@ -71,6 +72,7 @@
                                 <td style="padding: 8px; text-align: center; white-space: nowrap;">
                                     {{if gt $index 0}}
                                         <form style="display:inline; margin:0;">
+                                            {{ $.CSRFField }}
                                             <button type="submit" formmethod="POST" formaction="/site/{{$.Website.ID}}/products/{{$.Product.ID}}/variants/{{$variant.ID}}/reorder/up" class="btn btn-sm btn-success" style="padding:2px 8px; margin-right:2px;">↑</button>
                                         </form>
                                     {{else}}
@@ -80,6 +82,7 @@
                                     {{$nextIndex := add $index 1}}
                                     {{if lt $nextIndex $variantCount}}
                                         <form style="display:inline; margin:0;">
+                                            {{ $.CSRFField }}
                                             <button type="submit" formmethod="POST" formaction="/site/{{$.Website.ID}}/products/{{$.Product.ID}}/variants/{{$variant.ID}}/reorder/down" class="btn btn-sm btn-success" style="padding:2px 8px;">↓</button>
                                         </form>
                                     {{else}}

@@ -26,6 +26,7 @@
             <tr>
                 <td style="white-space:nowrap;">
                     <form style="display:inline;">
+                    {{ $.CSRFField }}
                     {{if gt $index 0}}
                         <button type="submit" formmethod="POST" formaction="/site/{{$.Website.ID}}/products/{{$product.ID}}/reorder/up" class="btn btn-sm btn-success" style="padding:2px 8px;">↑</button>
                     {{else}}
@@ -33,6 +34,7 @@
                     {{end}}
                     </form>
                     <form style="display:inline;">
+                    {{ $.CSRFField }}
                     {{$nextIndex := add $index 1}}
                     {{if lt $nextIndex $productCount}}
                         <button type="submit" formmethod="POST" formaction="/site/{{$.Website.ID}}/products/{{$product.ID}}/reorder/down" class="btn btn-sm btn-success" style="padding:2px 8px;">↓</button>
@@ -49,6 +51,7 @@
                 <td class="actions">
                     <a href="/site/{{$.Website.ID}}/products/{{$product.ID}}/edit" class="btn btn-sm">Edit</a>
                     <form method="POST" action="/site/{{$.Website.ID}}/products/{{$product.ID}}/delete" style="display:inline;" onsubmit="return confirm('Delete this product?');">
+                        {{ $.CSRFField }}
                         <button type="submit" class="btn btn-sm btn-danger">Delete</button>
                     </form>
                 </td>

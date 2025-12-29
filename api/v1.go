@@ -2,14 +2,18 @@ package api
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +28,7 @@ import (
 	"github.com/murdinc/stencil2/structs"
 	"github.com/murdinc/stencil2/twilio"
 	"github.com/murdinc/stencil2/utils"
+	"github.com/oschwald/geoip2-golang"
 	"github.com/stripe/stripe-go/v78"
 	"github.com/stripe/stripe-go/v78/customer"
 	"github.com/stripe/stripe-go/v78/paymentintent"
@@ -39,6 +44,10 @@ type contactRateLimiter struct {
 var rateLimiter = &contactRateLimiter{
 	submissions: make(map[string][]time.Time),
 }
+
+// Global GeoIP reader (loaded once, shared across all sites)
+var geoipReader *geoip2.Reader
+var geoipOnce sync.Once
 
 // checkRateLimit returns true if the IP is allowed to submit
 func (rl *contactRateLimiter) checkRateLimit(ip string) bool {
@@ -102,6 +111,130 @@ func (rl *contactRateLimiter) startCleanup() {
 	}()
 }
 
+// initGeoIP initializes the GeoIP database reader (called once)
+func initGeoIP() {
+	geoipOnce.Do(func() {
+		dbPath := "data/dbip-city-lite.mmdb"
+
+		// Check if database exists, if not, download it
+		if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+			log.Printf("GeoIP database not found at %s, attempting to download...", dbPath)
+			if err := downloadGeoIPDatabase(dbPath); err != nil {
+				log.Printf("Failed to download GeoIP database: %v", err)
+				log.Printf("Geolocation tracking will be disabled")
+				return
+			}
+		}
+
+		// Try to load the database
+		reader, err := geoip2.Open(dbPath)
+		if err != nil {
+			log.Printf("Warning: Could not load GeoIP database at %s: %v", dbPath, err)
+			log.Printf("Download DB-IP Lite manually: https://db-ip.com/db/download/ip-to-city-lite")
+			return
+		}
+
+		geoipReader = reader
+		log.Printf("GeoIP database loaded successfully from %s", dbPath)
+	})
+}
+
+// downloadGeoIPDatabase downloads the free DB-IP Lite database
+func downloadGeoIPDatabase(dbPath string) error {
+	// Create data directory if it doesn't exist
+	dataDir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return fmt.Errorf("failed to create data directory: %v", err)
+	}
+
+	// Get current year and month for the download URL
+	now := time.Now()
+	downloadURL := fmt.Sprintf("https://download.db-ip.com/free/dbip-city-lite-%d-%02d.mmdb.gz",
+		now.Year(), now.Month())
+
+	log.Printf("Downloading GeoIP database from %s...", downloadURL)
+
+	// Download the gzipped database
+	resp, err := http.Get(downloadURL)
+	if err != nil {
+		return fmt.Errorf("failed to download: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download failed with status: %d", resp.StatusCode)
+	}
+
+	// Create gzip reader
+	gzReader, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to create gzip reader: %v", err)
+	}
+	defer gzReader.Close()
+
+	// Create output file
+	outFile, err := os.Create(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %v", err)
+	}
+	defer outFile.Close()
+
+	// Copy decompressed data to file
+	written, err := io.Copy(outFile, gzReader)
+	if err != nil {
+		return fmt.Errorf("failed to write database file: %v", err)
+	}
+
+	log.Printf("Successfully downloaded GeoIP database (%.2f MB)", float64(written)/(1024*1024))
+	return nil
+}
+
+// lookupGeolocation returns geographic data for an IP address
+func lookupGeolocation(ipString string) (country, countryCode, region, city string, latitude, longitude *float64) {
+	// Return empty if GeoIP is not initialized
+	if geoipReader == nil {
+		return "", "", "", "", nil, nil
+	}
+
+	// Clean IP address (remove port if present)
+	if colonIndex := strings.LastIndex(ipString, ":"); colonIndex != -1 {
+		ipString = ipString[:colonIndex]
+	}
+
+	// Parse IP
+	ip := net.ParseIP(ipString)
+	if ip == nil {
+		return "", "", "", "", nil, nil
+	}
+
+	// Skip private/local IPs
+	if ip.IsLoopback() || ip.IsPrivate() {
+		return "", "", "", "", nil, nil
+	}
+
+	// Lookup in GeoIP database
+	record, err := geoipReader.City(ip)
+	if err != nil {
+		// Silently fail - common for local dev, VPNs, etc.
+		return "", "", "", "", nil, nil
+	}
+
+	// Extract location data
+	country = record.Country.Names["en"]
+	countryCode = record.Country.IsoCode
+
+	if len(record.Subdivisions) > 0 {
+		region = record.Subdivisions[0].Names["en"]
+	}
+
+	city = record.City.Names["en"]
+
+	lat := record.Location.Latitude
+	lon := record.Location.Longitude
+
+	return country, countryCode, region, city, &lat, &lon
+}
+
 // API represents the V1 API instance.
 type APIV1 struct {
 	Routes        []Route
@@ -123,6 +256,9 @@ func NewAPIV1(dbConn *database.DBConnection, websiteConfig *configs.WebsiteConfi
 
 	// Start rate limiter cleanup (only once for all sites)
 	rateLimiter.startCleanup()
+
+	// Initialize GeoIP database (only once for all sites)
+	initGeoIP()
 
 	api := &APIV1{
 		Routes:        make([]Route, 0),
@@ -1550,7 +1686,9 @@ func (api *APIV1) trackAnalytics(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	} else {
-		// Pageview (default) - return the pageview ID
+		// Pageview (default) - lookup geolocation and return the pageview ID
+		country, countryCode, region, city, latitude, longitude := lookupGeolocation(ipAddress)
+
 		pageviewID, err := api.dbConn.TrackPageView(
 			reqBody.VisitorID,
 			reqBody.SessionID,
@@ -1560,6 +1698,12 @@ func (api *APIV1) trackAnalytics(w http.ResponseWriter, r *http.Request) {
 			ipAddress,
 			reqBody.ScreenWidth,
 			reqBody.ScreenHeight,
+			country,
+			countryCode,
+			region,
+			city,
+			latitude,
+			longitude,
 		)
 		if err != nil {
 			log.Printf("Failed to track pageview: %v", err)

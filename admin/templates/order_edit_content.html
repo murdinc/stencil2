@@ -1,0 +1,246 @@
+{{define "content"}}
+<div style="margin-bottom: 24px;">
+    <h2>Edit Order #{{.Order.OrderNumber}}</h2>
+</div>
+
+<form id="orderEditForm" method="POST" action="/site/{{.Website.ID}}/orders/{{.Order.ID}}/update">
+    {{ .CSRFField }}
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+    <!-- Left Column: Order Items -->
+    <div>
+        <div class="card" style="margin-bottom: 20px;">
+            <h3>Order Items</h3>
+            <div id="orderItems">
+                {{range $index, $item := .Order.Items}}
+                <div class="order-item" data-item-id="{{$item.ID}}" style="padding: 16px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div style="flex: 1;">
+                            <p style="font-weight: 600; margin-bottom: 8px;">{{$item.ProductName}}</p>
+                            {{if $item.VariantTitle}}
+                            <p style="font-size: 14px; color: #666; margin-bottom: 8px;">{{$item.VariantTitle}}</p>
+                            {{end}}
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px;">
+                                <div>
+                                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Quantity</label>
+                                    <input type="number" name="items[{{$index}}][quantity]" value="{{$item.Quantity}}" min="1" class="item-quantity" data-original="{{$item.Quantity}}" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 4px;">
+                                    <input type="hidden" name="items[{{$index}}][id]" value="{{$item.ID}}">
+                                    <input type="hidden" name="items[{{$index}}][product_id]" value="{{$item.ProductID}}">
+                                    <input type="hidden" name="items[{{$index}}][variant_id]" value="{{$item.VariantID}}">
+                                </div>
+                                <div>
+                                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Price ($)</label>
+                                    <input type="number" name="items[{{$index}}][price]" value="{{printf "%.2f" $item.Price}}" step="0.01" min="0" class="item-price" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 4px;">
+                                </div>
+                                <div>
+                                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Total</label>
+                                    <p class="item-total" style="padding: 6px 0; font-weight: 600;">${{printf "%.2f" $item.Total}}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="remove-item" data-item-id="{{$item.ID}}" style="background: #f56565; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; margin-left: 12px;">Remove</button>
+                    </div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+            <h3>Shipping Address</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div style="grid-column: 1 / -1;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 4px;">Address Line 1</label>
+                    <input type="text" name="shipping_address_line1" value="{{.Order.ShippingAddressLine1}}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div style="grid-column: 1 / -1;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 4px;">Address Line 2</label>
+                    <input type="text" name="shipping_address_line2" value="{{.Order.ShippingAddressLine2}}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 4px;">City</label>
+                    <input type="text" name="shipping_city" value="{{.Order.ShippingCity}}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 4px;">State</label>
+                    <input type="text" name="shipping_state" value="{{.Order.ShippingState}}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 4px;">Zip</label>
+                    <input type="text" name="shipping_zip" value="{{.Order.ShippingZip}}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 4px;">Country</label>
+                    <input type="text" name="shipping_country" value="{{.Order.ShippingCountry}}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Customer Information</h3>
+            <div style="display: grid; gap: 12px;">
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 4px;">Customer Name</label>
+                    <input type="text" name="customer_name" value="{{.Order.CustomerName}}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 4px;">Customer Email</label>
+                    <input type="email" name="customer_email" value="{{.Order.CustomerEmail}}" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Order Summary -->
+    <div>
+        <div class="card" style="position: sticky; top: 20px;">
+            <h3>Order Summary</h3>
+            <div style="margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span>Subtotal:</span>
+                    <span id="summarySubtotal">${{printf "%.2f" .Order.Subtotal}}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span>Tax:</span>
+                    <span id="summaryTax">${{printf "%.2f" .Order.Tax}}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span>Shipping:</span>
+                    <span>${{printf "%.2f" .Order.ShippingCost}}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: 600; padding-top: 10px; border-top: 2px solid #667eea; margin-top: 10px;">
+                    <span>New Total:</span>
+                    <span id="summaryTotal">${{printf "%.2f" .Order.Total}}</span>
+                </div>
+                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
+                    <div style="display: flex; justify-content: space-between; font-size: 14px; color: #666;">
+                        <span>Original Total:</span>
+                        <span>${{printf "%.2f" .Order.Total}}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 14px; margin-top: 4px;" id="totalDifference">
+                        <span>Difference:</span>
+                        <span style="color: #48bb78;">$0.00</span>
+                    </div>
+                </div>
+            </div>
+
+            <input type="hidden" name="tax_rate" value="{{.TaxRate}}">
+            <input type="hidden" id="originalTotal" value="{{.Order.Total}}">
+
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <button type="submit" class="btn" style="width: 100%; background: #667eea;">Save Changes</button>
+                <a href="/site/{{.Website.ID}}/orders/{{.Order.ID}}" class="btn" style="width: 100%; text-align: center; background: #999;">Cancel</a>
+            </div>
+
+            <div id="paymentAdjustmentWarning" style="display: none; margin-top: 16px; padding: 12px; background: #fff4e6; border: 1px solid #f59e0b; border-radius: 4px; font-size: 14px;">
+                <p style="margin: 0; font-weight: 600; color: #f59e0b;">Payment Adjustment Required</p>
+                <p id="adjustmentMessage" style="margin: 8px 0 0 0; font-size: 13px;"></p>
+            </div>
+        </div>
+    </div>
+</div>
+</form>
+
+<script>
+const taxRate = parseFloat(document.querySelector('input[name="tax_rate"]').value) || 0;
+const originalTotal = parseFloat(document.getElementById('originalTotal').value);
+const shippingCost = {{.Order.ShippingCost}};
+
+// Calculate totals when items change
+function recalculateTotals() {
+    let subtotal = 0;
+
+    document.querySelectorAll('.order-item:not(.removed)').forEach(item => {
+        const quantity = parseFloat(item.querySelector('.item-quantity').value) || 0;
+        const price = parseFloat(item.querySelector('.item-price').value) || 0;
+        const total = quantity * price;
+
+        item.querySelector('.item-total').textContent = `$${total.toFixed(2)}`;
+        subtotal += total;
+    });
+
+    const tax = subtotal * taxRate;
+    const total = subtotal + tax + shippingCost;
+
+    document.getElementById('summarySubtotal').textContent = `$${subtotal.toFixed(2)}`;
+    document.getElementById('summaryTax').textContent = `$${tax.toFixed(2)}`;
+    document.getElementById('summaryTotal').textContent = `$${total.toFixed(2)}`;
+
+    // Show payment adjustment warning
+    const difference = total - originalTotal;
+    const diffElement = document.getElementById('totalDifference');
+    const warningElement = document.getElementById('paymentAdjustmentWarning');
+    const messageElement = document.getElementById('adjustmentMessage');
+
+    if (Math.abs(difference) > 0.01) {
+        if (difference > 0) {
+            diffElement.querySelector('span:last-child').style.color = '#f56565';
+            diffElement.querySelector('span:last-child').textContent = `+$${difference.toFixed(2)}`;
+            messageElement.textContent = `Customer will be charged an additional $${difference.toFixed(2)}`;
+            warningElement.style.display = 'block';
+        } else {
+            diffElement.querySelector('span:last-child').style.color = '#48bb78';
+            diffElement.querySelector('span:last-child').textContent = `-$${Math.abs(difference).toFixed(2)}`;
+            messageElement.textContent = `Customer will be refunded $${Math.abs(difference).toFixed(2)}`;
+            warningElement.style.display = 'block';
+        }
+    } else {
+        diffElement.querySelector('span:last-child').style.color = '#48bb78';
+        diffElement.querySelector('span:last-child').textContent = '$0.00';
+        warningElement.style.display = 'none';
+    }
+}
+
+// Add event listeners to quantity and price inputs
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.item-quantity, .item-price').forEach(input => {
+        input.addEventListener('input', recalculateTotals);
+    });
+
+    // Remove item functionality
+    document.querySelectorAll('.remove-item').forEach(button => {
+        button.addEventListener('click', function() {
+            const itemDiv = this.closest('.order-item');
+            if (confirm('Are you sure you want to remove this item?')) {
+                itemDiv.classList.add('removed');
+                itemDiv.style.display = 'none';
+
+                // Add hidden input to mark for deletion
+                const itemId = this.dataset.itemId;
+                const deleteInput = document.createElement('input');
+                deleteInput.type = 'hidden';
+                deleteInput.name = 'deleted_items[]';
+                deleteInput.value = itemId;
+                document.getElementById('orderEditForm').appendChild(deleteInput);
+
+                recalculateTotals();
+            }
+        });
+    });
+
+    // Form submission
+    document.getElementById('orderEditForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const difference = parseFloat(document.getElementById('summaryTotal').textContent.replace('$', '')) - originalTotal;
+        let confirmMessage = 'Are you sure you want to save these changes?';
+
+        if (Math.abs(difference) > 0.01) {
+            if (difference > 0) {
+                confirmMessage = `This will charge the customer an additional $${difference.toFixed(2)}. Continue?`;
+            } else {
+                confirmMessage = `This will refund the customer $${Math.abs(difference).toFixed(2)}. Continue?`;
+            }
+        }
+
+        if (confirm(confirmMessage)) {
+            this.submit();
+        }
+    });
+});
+</script>
+
+<style>
+.order-item.removed {
+    display: none !important;
+}
+</style>
+{{end}}

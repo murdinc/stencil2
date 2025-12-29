@@ -1,6 +1,7 @@
 # Ignore the websites folder
 /websites/
 /builds/
+/data/
 
 # macOS hidden files
 .DS_Store
@@ -11,3 +12,4 @@ Thumbs.db
 # Editor-specific hidden files (optional, adjust as needed)
 .vscode/
 .idea/
+.claude/

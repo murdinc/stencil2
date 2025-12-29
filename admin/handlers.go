@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"math"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,7 +22,10 @@ import (
 	"github.com/murdinc/stencil2/database"
 	"github.com/murdinc/stencil2/email"
 	"github.com/murdinc/stencil2/frontend"
+	"github.com/murdinc/stencil2/shippo"
 	"github.com/murdinc/stencil2/twilio"
+	"github.com/stripe/stripe-go/v78"
+	"github.com/stripe/stripe-go/v78/refund"
 )
 
 // Helper function to get website from URL parameter (db name)
@@ -214,9 +219,6 @@ func (s *AdminServer) handleSiteDashboard(w http.ResponseWriter, r *http.Request
 	now := time.Now().In(loc)
 	endDate := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, loc)
 	startDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, -6) // Start at midnight 6 days ago
-
-	// Debug: Log the date range
-	log.Printf("Overview date range for %s: %s to %s", websiteID, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
 
 	timeSeriesData, err := s.GetAnalyticsTimeSeries(websiteID, startDate, endDate, site.Timezone)
 	if err != nil {
@@ -2915,6 +2917,72 @@ func (s *AdminServer) handleDeleteSMSSignup(w http.ResponseWriter, r *http.Reque
 	http.Redirect(w, r, fmt.Sprintf("/site/%s/sms-signups", websiteID), http.StatusSeeOther)
 }
 
+// handleResendSMSVerification resends verification code to an SMS signup
+func (s *AdminServer) handleResendSMSVerification(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	signupIDStr := chi.URLParam(r, "signupId")
+	signupID, err := strconv.Atoi(signupIDStr)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid signup ID"})
+		return
+	}
+
+	// Get signup details
+	signup, err := s.GetSMSSignupByID(websiteID, signupID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Signup not found"})
+		return
+	}
+
+	// Check if already verified
+	if signup.Verified {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Phone number already verified"})
+		return
+	}
+
+	// Get website for Twilio config
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Website not found"})
+		return
+	}
+
+	// Generate new 6-digit verification code
+	verificationCode := fmt.Sprintf("%06d", rand.Intn(1000000))
+
+	// Store verification code in database
+	err = s.SetSMSVerificationCode(websiteID, signup.CountryCode, signup.Phone, verificationCode)
+	if err != nil {
+		log.Printf("Failed to store verification code: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to generate verification code"})
+		return
+	}
+
+	// Send SMS via Twilio
+	twilio := s.GetTwilio(&website)
+	if twilio == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Twilio not configured"})
+		return
+	}
+
+	err = twilio.SendVerificationCode(signup.CountryCode+signup.Phone, verificationCode)
+	if err != nil {
+		log.Printf("Failed to send verification SMS: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to send SMS"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+}
+
 // handleExportSMSSignups exports SMS signups to CSV
 func (s *AdminServer) handleExportSMSSignups(w http.ResponseWriter, r *http.Request) {
 	websiteID := chi.URLParam(r, "id")
@@ -3357,6 +3425,57 @@ func (s *AdminServer) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 	s.renderWithLayout(w, r, "analytics_content.html", data)
 }
 
+// handleAnalyticsLocationData returns location data as JSON for map visualization
+func (s *AdminServer) handleAnalyticsLocationData(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Parse date range from query params (default to last 30 days)
+	daysParam := r.URL.Query().Get("days")
+	days := 30
+	if daysParam != "" {
+		if d, err := strconv.Atoi(daysParam); err == nil && d > 0 {
+			days = d
+		}
+	}
+
+	// Set date range
+	loc, err := time.LoadLocation(website.Timezone)
+	if err != nil {
+		log.Printf("Error loading timezone %s: %v, defaulting to UTC", website.Timezone, err)
+		loc = time.UTC
+	}
+	now := time.Now().In(loc)
+	endDate := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, loc)
+	startDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, -days+1)
+
+	// Get location data
+	locations, err := s.GetLocationStats(websiteID, startDate, endDate)
+	if err != nil {
+		log.Printf("Error fetching location stats: %v", err)
+		http.Error(w, "Failed to fetch location data", http.StatusInternalServerError)
+		return
+	}
+
+	// Get top countries
+	countries, err := s.GetTopCountries(websiteID, startDate, endDate, 10)
+	if err != nil {
+		log.Printf("Error fetching top countries: %v", err)
+		countries = []map[string]interface{}{}
+	}
+
+	// Return JSON response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"locations": locations,
+		"countries": countries,
+	})
+}
+
 // renderTemplate renders a template with data
 func (s *AdminServer) renderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data interface{}) {
 	tmplPath := filepath.Join("admin", "templates", tmpl+".html")
@@ -3654,4 +3773,360 @@ func (s *AdminServer) SendReplyEmail(website *Website, message *MessageWithRepli
 
 	log.Printf("Email sent successfully to %s (%s)", message.Email, message.Name)
 	return nil
+}
+
+// handleShippingLabelCancel cancels/refunds a shipping label
+func (s *AdminServer) handleShippingLabelCancel(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	orderIDStr := chi.URLParam(r, "orderId")
+	orderID, err := strconv.Atoi(orderIDStr)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid order ID",
+		})
+		return
+	}
+
+	// Get order details
+	order, err := s.GetOrder(websiteID, orderID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("Error fetching order: %v", err),
+		})
+		return
+	}
+
+	// Verify that a shipping label exists
+	if order.ShippoTransactionID == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "No shipping label found for this order",
+		})
+		return
+	}
+
+	// Get website for Shippo config
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Website not found",
+		})
+		return
+	}
+
+	// Initialize Shippo client
+	shippoClient := shippo.NewClient(website.ShippoAPIKey)
+
+	// Refund the label via Shippo API
+	err = shippoClient.RefundLabel(order.ShippoTransactionID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("Failed to refund label: %v", err),
+		})
+		return
+	}
+
+	// Clear shipping label information from database
+	err = s.ClearOrderShippingLabel(websiteID, orderID, "unfulfilled")
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("Failed to update order: %v", err),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Shipping label cancelled successfully",
+	})
+}
+
+// handleOrderRefund processes full or partial refunds for an order
+func (s *AdminServer) handleOrderRefund(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	orderIDStr := chi.URLParam(r, "orderId")
+	orderID, err := strconv.Atoi(orderIDStr)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid order ID",
+		})
+		return
+	}
+
+	// Parse refund amount from request
+	refundAmountStr := r.FormValue("refund_amount")
+	refundAmount, err := strconv.ParseFloat(refundAmountStr, 64)
+	if err != nil || refundAmount <= 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid refund amount",
+		})
+		return
+	}
+
+	// Get order details
+	order, err := s.GetOrder(websiteID, orderID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("Error fetching order: %v", err),
+		})
+		return
+	}
+
+	// Validate order is paid
+	if order.PaymentStatus != "paid" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Cannot refund: order has not been paid",
+		})
+		return
+	}
+
+	// Validate Stripe payment intent exists
+	if order.StripePaymentIntent == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "No Stripe payment intent found for this order",
+		})
+		return
+	}
+
+	// Calculate remaining refundable amount
+	remainingAmount := order.Total - order.RefundedAmount
+	if refundAmount > remainingAmount {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("Refund amount ($%.2f) exceeds remaining refundable amount ($%.2f)", refundAmount, remainingAmount),
+		})
+		return
+	}
+
+	// Get website for Stripe config
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Website not found",
+		})
+		return
+	}
+
+	// Initialize Stripe client
+	stripe.Key = website.StripeSecretKey
+
+	// Convert amount to cents for Stripe
+	refundAmountCents := int64(refundAmount * 100)
+
+	// Create refund via Stripe API
+	refundParams := &stripe.RefundParams{
+		PaymentIntent: stripe.String(order.StripePaymentIntent),
+		Amount:        stripe.Int64(refundAmountCents),
+	}
+
+	_, err = refund.New(refundParams)
+	if err != nil {
+		log.Printf("Stripe refund failed: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("Failed to process refund: %v", err),
+		})
+		return
+	}
+
+	// Update order refunded amount in database
+	newRefundedAmount := order.RefundedAmount + refundAmount
+	err = s.UpdateOrderRefundedAmount(websiteID, orderID, newRefundedAmount)
+	if err != nil {
+		log.Printf("Failed to update refunded amount in database: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Refund processed but failed to update database",
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Successfully refunded $%.2f", refundAmount),
+		"refunded_amount": newRefundedAmount,
+	})
+}
+
+// handleOrderEdit displays the order edit form
+func (s *AdminServer) handleOrderEdit(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	orderIDStr := chi.URLParam(r, "orderId")
+	orderID, err := strconv.Atoi(orderIDStr)
+	if err != nil {
+		http.Error(w, "Invalid order ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get website
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, "Website not found", http.StatusNotFound)
+		return
+	}
+
+	// Get order details
+	order, err := s.GetOrder(websiteID, orderID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error fetching order: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	allSites, _ := s.GetAllWebsites()
+
+	data := map[string]interface{}{
+		"Title":         "Edit Order",
+		"Website":       website,
+		"Order":         order,
+		"TaxRate":       website.TaxRate,
+		"AllSites":      allSites,
+		"CurrentSite":   website,
+		"ActiveSection": "orders",
+	}
+
+	s.renderWithLayout(w, r, "order_edit_content.html", data)
+}
+
+// handleOrderUpdate processes order updates
+func (s *AdminServer) handleOrderUpdate(w http.ResponseWriter, r *http.Request) {
+	websiteID := chi.URLParam(r, "id")
+	orderIDStr := chi.URLParam(r, "orderId")
+	orderID, err := strconv.Atoi(orderIDStr)
+	if err != nil {
+		http.Error(w, "Invalid order ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get current order state
+	originalOrder, err := s.GetOrder(websiteID, orderID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error fetching order: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Parse form data
+	err = r.ParseForm()
+	if err != nil {
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	// Update customer info
+	customerName := r.FormValue("customer_name")
+	customerEmail := r.FormValue("customer_email")
+
+	// Update shipping address
+	shippingAddr := map[string]string{
+		"line1":   r.FormValue("shipping_address_line1"),
+		"line2":   r.FormValue("shipping_address_line2"),
+		"city":    r.FormValue("shipping_city"),
+		"state":   r.FormValue("shipping_state"),
+		"zip":     r.FormValue("shipping_zip"),
+		"country": r.FormValue("shipping_country"),
+	}
+
+	// Process order items
+	var newItems []map[string]interface{}
+	var subtotal float64
+	itemIndex := 0
+
+	for {
+		idKey := fmt.Sprintf("items[%d][id]", itemIndex)
+		if r.FormValue(idKey) == "" {
+			break
+		}
+
+		itemID, _ := strconv.Atoi(r.FormValue(idKey))
+		productID, _ := strconv.Atoi(r.FormValue(fmt.Sprintf("items[%d][product_id]", itemIndex)))
+		variantID, _ := strconv.Atoi(r.FormValue(fmt.Sprintf("items[%d][variant_id]", itemIndex)))
+		quantity, _ := strconv.Atoi(r.FormValue(fmt.Sprintf("items[%d][quantity]", itemIndex)))
+		price, _ := strconv.ParseFloat(r.FormValue(fmt.Sprintf("items[%d][price]", itemIndex)), 64)
+
+		total := float64(quantity) * price
+		subtotal += total
+
+		newItems = append(newItems, map[string]interface{}{
+			"id":         itemID,
+			"product_id": productID,
+			"variant_id": variantID,
+			"quantity":   quantity,
+			"price":      price,
+			"total":      total,
+		})
+
+		itemIndex++
+	}
+
+	// Get deleted items
+	deletedItemIDs := r.Form["deleted_items[]"]
+
+	// Get website for tax rate
+	website, err := s.GetWebsite(websiteID)
+	if err != nil {
+		http.Error(w, "Website not found", http.StatusNotFound)
+		return
+	}
+
+	// Calculate new totals
+	tax := subtotal * website.TaxRate
+	newTotal := subtotal + tax + originalOrder.ShippingCost
+
+	// Calculate payment difference
+	paymentDifference := newTotal - originalOrder.Total
+
+	// Update order in database
+	err = s.UpdateOrderDetails(websiteID, orderID, customerName, customerEmail, shippingAddr, subtotal, tax, newTotal)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to update order: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Update order items
+	err = s.UpdateOrderItems(websiteID, orderID, newItems, deletedItemIDs, originalOrder.Items)
+	if err != nil {
+		log.Printf("Failed to update order items: %v", err)
+		http.Error(w, "Failed to update order items", http.StatusInternalServerError)
+		return
+	}
+
+	// Handle payment adjustment if needed
+	if originalOrder.PaymentStatus == "paid" && math.Abs(paymentDifference) > 0.01 {
+		err = s.AdjustOrderPayment(websiteID, orderID, &originalOrder, paymentDifference)
+		if err != nil {
+			log.Printf("Payment adjustment failed: %v", err)
+			http.Error(w, fmt.Sprintf("Order updated but payment adjustment failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Redirect back to order detail page
+	http.Redirect(w, r, fmt.Sprintf("/site/%s/orders/%d", websiteID, orderID), http.StatusSeeOther)
 }
