@@ -1152,6 +1152,24 @@ func (s *AdminServer) GetProducts(websiteID string, limit, offset int) ([]Produc
 		if err != nil {
 			return nil, err
 		}
+
+		// Load variants for this product
+		variantsQuery := `SELECT id, product_id, title, price_modifier, sku, inventory_quantity, position
+			FROM product_variants WHERE product_id = ? ORDER BY position ASC`
+		variantRows, err := db.Query(variantsQuery, p.ID)
+		if err == nil {
+			defer variantRows.Close()
+			for variantRows.Next() {
+				var variant structs.ProductVariant
+				var sku sql.NullString
+				err := variantRows.Scan(&variant.ID, &variant.ProductID, &variant.Title, &variant.PriceModifier, &sku, &variant.InventoryQuantity, &variant.Position)
+				if err == nil {
+					variant.SKU = sku.String
+					p.Variants = append(p.Variants, variant)
+				}
+			}
+		}
+
 		products = append(products, p)
 	}
 

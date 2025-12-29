@@ -85,7 +85,13 @@ func (s *AdminServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to create session", http.StatusInternalServerError)
 			return
 		}
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+
+		// Redirect superadmin to superadmin console by default
+		if isAdmin(validUsername) {
+			http.Redirect(w, r, "/superadmin", http.StatusSeeOther)
+		} else {
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+		}
 		return
 	}
 
@@ -452,11 +458,141 @@ func (s *AdminServer) handleSuperadmin(w http.ResponseWriter, r *http.Request) {
 		websites = []Website{}
 	}
 
+	// Get stats for all websites
+	stats := s.getWebsiteStats(websites)
+
+	// Calculate totals
+	totals := calculateTotals(stats)
+
 	s.renderWithLayout(w, r, "superadmin_dashboard_content.html", map[string]interface{}{
 		"Title":         "Superadmin Console",
 		"ActiveSection": "superadmin",
 		"Websites":      websites,
+		"Stats":         stats,
+		"Totals":        totals,
 	})
+}
+
+// WebsiteStats holds statistics for a single website
+type WebsiteStats struct {
+	Website          Website
+	ProductCount     int
+	OutOfStockCount  int
+	ArticleCount     int
+	CategoryCount    int
+	CollectionCount  int
+	OrdersPaid       int
+	OrdersPending    int
+	OrdersUnfulfilled int
+	TotalSales       float64
+	PageviewsTotal   int
+	PageviewsUnique  int
+	MessagesUnread   int
+	MessagesTotal    int
+	SMSSignups       int
+	SMSVerified      int
+	UniqueCustomers  int
+}
+
+// getWebsiteStats retrieves statistics for all websites
+func (s *AdminServer) getWebsiteStats(websites []Website) []WebsiteStats {
+	stats := make([]WebsiteStats, 0, len(websites))
+
+	for _, website := range websites {
+		ws := WebsiteStats{Website: website}
+
+		// Get database connection for this website
+		db, err := s.GetWebsiteConnection(website.ID)
+		if err != nil {
+			log.Printf("Error connecting to %s: %v", website.DatabaseName, err)
+			stats = append(stats, ws)
+			continue
+		}
+
+		// Product counts
+		db.QueryRow("SELECT COUNT(*) FROM products_unified WHERE status = 'published'").Scan(&ws.ProductCount)
+		db.QueryRow("SELECT COUNT(*) FROM products_unified WHERE status = 'published' AND inventory_quantity <= 0").Scan(&ws.OutOfStockCount)
+
+		// Article count
+		db.QueryRow("SELECT COUNT(*) FROM articles_unified WHERE status = 'published'").Scan(&ws.ArticleCount)
+
+		// Category count
+		db.QueryRow("SELECT COUNT(*) FROM categories").Scan(&ws.CategoryCount)
+
+		// Collection count
+		db.QueryRow("SELECT COUNT(*) FROM collections_unified WHERE status = 'published'").Scan(&ws.CollectionCount)
+
+		// Order statistics
+		db.QueryRow("SELECT COUNT(*), COALESCE(SUM(total), 0) FROM orders WHERE payment_status = 'paid'").Scan(&ws.OrdersPaid, &ws.TotalSales)
+		db.QueryRow("SELECT COUNT(*) FROM orders WHERE payment_status = 'pending'").Scan(&ws.OrdersPending)
+		db.QueryRow("SELECT COUNT(*) FROM orders WHERE fulfillment_status = 'unfulfilled' AND payment_status = 'paid'").Scan(&ws.OrdersUnfulfilled)
+
+		// Pageview statistics (last 30 days)
+		db.QueryRow("SELECT COUNT(*) FROM analytics_pageviews WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)").Scan(&ws.PageviewsTotal)
+		db.QueryRow("SELECT COUNT(DISTINCT session_id) FROM analytics_pageviews WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)").Scan(&ws.PageviewsUnique)
+
+		// Message statistics
+		db.QueryRow("SELECT COUNT(*) FROM messages WHERE status = 'unread'").Scan(&ws.MessagesUnread)
+		db.QueryRow("SELECT COUNT(*) FROM messages").Scan(&ws.MessagesTotal)
+
+		// SMS signup statistics
+		db.QueryRow("SELECT COUNT(*) FROM sms_signups").Scan(&ws.SMSSignups)
+		db.QueryRow("SELECT COUNT(*) FROM sms_signups WHERE verified = 1").Scan(&ws.SMSVerified)
+
+		// Unique customer count
+		db.QueryRow("SELECT COUNT(DISTINCT customer_email) FROM orders WHERE payment_status = 'paid'").Scan(&ws.UniqueCustomers)
+
+		db.Close()
+		stats = append(stats, ws)
+	}
+
+	return stats
+}
+
+// StatsTotals holds the aggregated totals across all websites
+type StatsTotals struct {
+	ProductCount      int
+	OutOfStockCount   int
+	ArticleCount      int
+	CategoryCount     int
+	CollectionCount   int
+	OrdersPaid        int
+	OrdersPending     int
+	OrdersUnfulfilled int
+	TotalSales        float64
+	PageviewsTotal    int
+	PageviewsUnique   int
+	MessagesUnread    int
+	MessagesTotal     int
+	SMSSignups        int
+	SMSVerified       int
+	UniqueCustomers   int
+}
+
+// calculateTotals aggregates statistics across all websites
+func calculateTotals(stats []WebsiteStats) StatsTotals {
+	totals := StatsTotals{}
+
+	for _, s := range stats {
+		totals.ProductCount += s.ProductCount
+		totals.OutOfStockCount += s.OutOfStockCount
+		totals.ArticleCount += s.ArticleCount
+		totals.CategoryCount += s.CategoryCount
+		totals.CollectionCount += s.CollectionCount
+		totals.OrdersPaid += s.OrdersPaid
+		totals.OrdersPending += s.OrdersPending
+		totals.OrdersUnfulfilled += s.OrdersUnfulfilled
+		totals.TotalSales += s.TotalSales
+		totals.PageviewsTotal += s.PageviewsTotal
+		totals.PageviewsUnique += s.PageviewsUnique
+		totals.MessagesUnread += s.MessagesUnread
+		totals.MessagesTotal += s.MessagesTotal
+		totals.SMSSignups += s.SMSSignups
+		totals.SMSVerified += s.SMSVerified
+		totals.UniqueCustomers += s.UniqueCustomers
+	}
+
+	return totals
 }
 
 // handleSuperadminCheckup renders the configuration checkup page

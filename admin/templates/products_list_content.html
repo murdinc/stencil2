@@ -16,6 +16,7 @@
                 <th>Slug</th>
                 <th>Price</th>
                 <th>SKU</th>
+                <th>Stock</th>
                 <th>Status</th>
                 <th>Actions</th>
             </tr>
@@ -47,6 +48,26 @@
                 <td><code>{{$product.Slug}}</code></td>
                 <td>${{printf "%.2f" $product.Price}}</td>
                 <td>{{$product.SKU}}</td>
+                <td>
+                    {{if $product.Variants}}
+                        {{range $vIndex, $variant := $product.Variants}}
+                            {{if $vIndex}}, {{end}}
+                            {{if eq $variant.InventoryQuantity -1}}
+                                <span style="{{if le $product.InventoryQuantity 0}}color: #e74c3c; font-weight: 600;{{end}}">
+                                    {{$variant.Title}}: {{$product.InventoryQuantity}}
+                                </span>
+                            {{else}}
+                                <span style="{{if eq $variant.InventoryQuantity 0}}color: #e74c3c; font-weight: 600;{{end}}">
+                                    {{$variant.Title}}: {{$variant.InventoryQuantity}}
+                                </span>
+                            {{end}}
+                        {{end}}
+                    {{else}}
+                        <span style="{{if eq $product.InventoryQuantity 0}}color: #e74c3c; font-weight: 600;{{end}}">
+                            {{$product.InventoryQuantity}}
+                        </span>
+                    {{end}}
+                </td>
                 <td>{{$product.Status}}</td>
                 <td class="actions">
                     <a href="/site/{{$.Website.ID}}/products/{{$product.ID}}/edit" class="btn btn-sm">Edit</a>

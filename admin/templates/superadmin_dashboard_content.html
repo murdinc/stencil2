@@ -4,33 +4,97 @@
     <p>Manage websites, users, and system-wide settings</p>
 </div>
 
-{{if .Websites}}
+{{if .Stats}}
 <div class="card">
-    <h3>All Websites ({{len .Websites}})</h3>
-    <table>
-        <thead>
-            <tr>
-                <th>Site Name</th>
-                <th>Database</th>
-                <th>Directory</th>
-                <th>HTTP Address</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {{range .Websites}}
-            <tr>
-                <td><strong>{{.SiteName}}</strong></td>
-                <td><code style="background: #f7f9fc; padding: 2px 8px; border-radius: 4px; font-size: 12px;">{{.DatabaseName}}</code></td>
-                <td><code style="background: #f7f9fc; padding: 2px 8px; border-radius: 4px; font-size: 12px;">{{.Directory}}</code></td>
-                <td>{{.HTTPAddress}}</td>
-                <td>
-                    <a href="/site/{{.DatabaseName}}" class="btn btn-sm">Manage</a>
-                </td>
-            </tr>
-            {{end}}
-        </tbody>
-    </table>
+    <h3>All Websites ({{len .Stats}})</h3>
+    <div style="overflow-x: auto;">
+        <table style="font-size: 13px;">
+            <thead>
+                <tr>
+                    <th style="min-width: 200px; position: sticky; left: 0; background: #f7f9fc; z-index: 10;">Website</th>
+                    <!-- E-commerce -->
+                    <th style="text-align: center; width: 90px; background: #fef5e7; border-left: 2px solid #f39c12;">Orders Paid</th>
+                    <th style="text-align: center; width: 90px; background: #fef5e7;">Orders Pending</th>
+                    <th style="text-align: center; width: 90px; background: #fef5e7;">Unfulfilled</th>
+                    <th style="text-align: center; width: 110px; background: #fef5e7; border-right: 2px solid #f39c12;">Total Sales</th>
+                    <th style="text-align: center; width: 90px; background: #e8f8f5; border-left: 2px solid #27ae60;">Customers</th>
+                    <!-- Content -->
+                    <th style="text-align: center; width: 90px; background: #ebf5fb; border-left: 2px solid #3498db;">Products</th>
+                    <th style="text-align: center; width: 90px; background: #ebf5fb;">Collections</th>
+                    <th style="text-align: center; width: 90px; background: #ebf5fb;">Out of Stock</th>
+                    <th style="text-align: center; width: 90px; background: #ebf5fb;">Articles</th>
+                    <th style="text-align: center; width: 90px; background: #ebf5fb; border-right: 2px solid #3498db;">Categories</th>
+                    <!-- Analytics -->
+                    <th style="text-align: center; width: 100px; background: #f4ecf7; border-left: 2px solid #8e44ad;">Pageviews<br><small style="font-weight: normal;">(30d)</small></th>
+                    <th style="text-align: center; width: 100px; background: #f4ecf7;">Unique Sessions</th>
+                    <th style="text-align: center; width: 90px; background: #f4ecf7;">Messages</th>
+                    <th style="text-align: center; width: 90px; background: #f4ecf7;">Unread</th>
+                    <th style="text-align: center; width: 90px; background: #f4ecf7;">SMS Signups</th>
+                    <th style="text-align: center; width: 90px; background: #f4ecf7; border-right: 2px solid #8e44ad;">SMS Verified</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Stats}}
+                <tr>
+                    <td style="position: sticky; left: 0; background: white; z-index: 5; border-right: 1px solid #e1e8ed;">
+                        <a href="/site/{{.Website.DatabaseName}}" style="text-decoration: none; color: inherit;">
+                            <strong style="color: #667eea;">{{.Website.SiteName}}</strong>
+                        </a>
+                        <br>
+                        <code style="font-size: 10px; color: #666;">{{.Website.DatabaseName}}</code>
+                        <br>
+                        <code style="font-size: 10px; color: #666;">{{.Website.Directory}}</code>
+                        <br>
+                        <span style="font-size: 10px; color: #999;">{{.Website.HTTPAddress}}</span>
+                    </td>
+                    <!-- E-commerce -->
+                    <td style="text-align: center; background: #fef5e7;"><a href="/site/{{.Website.DatabaseName}}/orders" style="text-decoration: none; color: inherit;">{{.OrdersPaid}}</a></td>
+                    <td style="text-align: center; background: #fef5e7;"><a href="/site/{{.Website.DatabaseName}}/orders" style="text-decoration: none;">{{if .OrdersPending}}<span style="color: #f39c12; font-weight: 600;">{{.OrdersPending}}</span>{{else}}0{{end}}</a></td>
+                    <td style="text-align: center; background: #fef5e7;"><a href="/site/{{.Website.DatabaseName}}/orders" style="text-decoration: none;">{{if .OrdersUnfulfilled}}<span style="color: #e74c3c; font-weight: 600;">{{.OrdersUnfulfilled}}</span>{{else}}0{{end}}</a></td>
+                    <td style="text-align: center; font-weight: 600; color: #27ae60; background: #fef5e7;"><a href="/site/{{.Website.DatabaseName}}/orders" style="text-decoration: none; color: #27ae60;">${{printf "%.2f" .TotalSales}}</a></td>
+                    <td style="text-align: center; background: #e8f8f5;"><a href="/site/{{.Website.DatabaseName}}/orders" style="text-decoration: none; color: inherit;">{{.UniqueCustomers}}</a></td>
+                    <!-- Content -->
+                    <td style="text-align: center; background: #ebf5fb;"><a href="/site/{{.Website.DatabaseName}}/products" style="text-decoration: none; color: inherit;">{{.ProductCount}}</a></td>
+                    <td style="text-align: center; background: #ebf5fb;"><a href="/site/{{.Website.DatabaseName}}/collections" style="text-decoration: none; color: inherit;">{{.CollectionCount}}</a></td>
+                    <td style="text-align: center; background: #ebf5fb;"><a href="/site/{{.Website.DatabaseName}}/products" style="text-decoration: none;">{{if .OutOfStockCount}}<span style="color: #e74c3c; font-weight: 600;">{{.OutOfStockCount}}</span>{{else}}0{{end}}</a></td>
+                    <td style="text-align: center; background: #ebf5fb;"><a href="/site/{{.Website.DatabaseName}}/articles" style="text-decoration: none; color: inherit;">{{.ArticleCount}}</a></td>
+                    <td style="text-align: center; background: #ebf5fb;"><a href="/site/{{.Website.DatabaseName}}/categories" style="text-decoration: none; color: inherit;">{{.CategoryCount}}</a></td>
+                    <!-- Analytics -->
+                    <td style="text-align: center; background: #f4ecf7;"><a href="/site/{{.Website.DatabaseName}}/analytics" style="text-decoration: none; color: inherit;">{{.PageviewsTotal}}</a></td>
+                    <td style="text-align: center; background: #f4ecf7;"><a href="/site/{{.Website.DatabaseName}}/analytics" style="text-decoration: none; color: inherit;">{{.PageviewsUnique}}</a></td>
+                    <td style="text-align: center; background: #f4ecf7;"><a href="/site/{{.Website.DatabaseName}}/messages" style="text-decoration: none; color: inherit;">{{.MessagesTotal}}</a></td>
+                    <td style="text-align: center; background: #f4ecf7;"><a href="/site/{{.Website.DatabaseName}}/messages" style="text-decoration: none;">{{if .MessagesUnread}}<span style="color: #e74c3c; font-weight: 600;">{{.MessagesUnread}}</span>{{else}}0{{end}}</a></td>
+                    <td style="text-align: center; background: #f4ecf7;"><a href="/site/{{.Website.DatabaseName}}/sms-signups" style="text-decoration: none; color: inherit;">{{.SMSSignups}}</a></td>
+                    <td style="text-align: center; background: #f4ecf7;"><a href="/site/{{.Website.DatabaseName}}/sms-signups" style="text-decoration: none; color: inherit;">{{.SMSVerified}}</a></td>
+                </tr>
+                {{end}}
+            </tbody>
+            <tfoot>
+                <tr style="background: #f7f9fc; font-weight: 700; font-size: 14px;">
+                    <td style="border-top: 3px solid #667eea; position: sticky; left: 0; background: #f7f9fc; z-index: 10;">TOTALS</td>
+                    <!-- E-commerce -->
+                    <td style="text-align: center; border-top: 3px solid #667eea;">{{.Totals.OrdersPaid}}</td>
+                    <td style="text-align: center; border-top: 3px solid #667eea; color: #f39c12;">{{.Totals.OrdersPending}}</td>
+                    <td style="text-align: center; border-top: 3px solid #667eea; color: #e74c3c;">{{.Totals.OrdersUnfulfilled}}</td>
+                    <td style="text-align: center; color: #27ae60; border-top: 3px solid #667eea; font-size: 15px;">${{printf "%.2f" .Totals.TotalSales}}</td>
+                    <td style="text-align: center; border-top: 3px solid #667eea;">{{.Totals.UniqueCustomers}}</td>
+                    <!-- Content -->
+                    <td style="text-align: center; border-top: 3px solid #667eea;">{{.Totals.ProductCount}}</td>
+                    <td style="text-align: center; border-top: 3px solid #667eea;">{{.Totals.CollectionCount}}</td>
+                    <td style="text-align: center; border-top: 3px solid #667eea; color: #e74c3c;">{{.Totals.OutOfStockCount}}</td>
+                    <td style="text-align: center; border-top: 3px solid #667eea;">{{.Totals.ArticleCount}}</td>
+                    <td style="text-align: center; border-top: 3px solid #667eea;">{{.Totals.CategoryCount}}</td>
+                    <!-- Analytics -->
+                    <td style="text-align: center; border-top: 3px solid #667eea;">{{.Totals.PageviewsTotal}}</td>
+                    <td style="text-align: center; border-top: 3px solid #667eea;">{{.Totals.PageviewsUnique}}</td>
+                    <td style="text-align: center; border-top: 3px solid #667eea;">{{.Totals.MessagesTotal}}</td>
+                    <td style="text-align: center; border-top: 3px solid #667eea; color: #e74c3c;">{{.Totals.MessagesUnread}}</td>
+                    <td style="text-align: center; border-top: 3px solid #667eea;">{{.Totals.SMSSignups}}</td>
+                    <td style="text-align: center; border-top: 3px solid #667eea;">{{.Totals.SMSVerified}}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
 </div>
 {{else}}
 <div class="card">
